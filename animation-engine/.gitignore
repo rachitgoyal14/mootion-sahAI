@@ -1,0 +1,18 @@
+.env
+/venv
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+*.log
+/build/
+/dist/
+*.egg-info/
+/tests/__pycache__/
+/tests/*.pyc
+/tests/data/
+/tests/temp/
+coverage.xml
+media/
+# outputs/

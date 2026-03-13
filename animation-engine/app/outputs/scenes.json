@@ -1,0 +1,45 @@
+{
+  "category": "physics",
+  "scenes": [
+    {
+      "scene_id": 1,
+      "concept": "Introduction to Newton's Laws of Motion",
+      "visual": "Display the title 'Newton's Laws of Motion' centered on screen with three numbered bullet points appearing sequentially labeled '1. First Law', '2. Second Law', '3. Third Law' with subtle fade-in animations."
+    },
+    {
+      "scene_id": 2,
+      "concept": "First Law (Law of Inertia) - Object at rest remains at rest",
+      "visual": "Show a stationary square object on a flat surface. Animate a label 'At Rest' above it. The object remains still for the duration with no forces acting on it."
+    },
+    {
+      "scene_id": 3,
+      "concept": "First Law (Law of Inertia) - Object in motion continues with constant velocity",
+      "visual": "Animate the same square object moving horizontally from left to right at a constant speed with a velocity vector arrow above it. Label the arrow 'Constant Velocity'."
+    },
+    {
+      "scene_id": 4,
+      "concept": "First Law - External force changes motion",
+      "visual": "Show a hand-shaped arrow pushing the moving square object from the right side, causing the velocity vector to change direction and magnitude. Highlight the force arrow in red labeled 'External Force'."
+    },
+    {
+      "scene_id": 5,
+      "concept": "Second Law (Law of Acceleration) - F = ma formula",
+      "visual": "Display the formula 'F = ma' prominently in the center. Animate the letters 'F', 'm', and 'a' appearing one by one with their full forms: 'Force', 'Mass', 'Acceleration' below each letter."
+    },
+    {
+      "scene_id": 6,
+      "concept": "Second Law - Force causes acceleration proportional to mass",
+      "visual": "Show two circles of different sizes labeled 'Mass 1' and 'Mass 2' on a flat surface. Apply equal force arrows pushing both circles to the right. Animate the smaller mass accelerating faster with a longer velocity arrow, the larger mass accelerating slower with a shorter velocity arrow."
+    },
+    {
+      "scene_id": 7,
+      "concept": "Third Law (Law of Action and Reaction) - Equal and opposite forces",
+      "visual": "Display two squares facing each other with arrows between them. One arrow points from left square to right labeled 'Action Force', the other arrow points from right square to left labeled 'Reaction Force'. Both arrows are equal in length and opposite in direction."
+    },
+    {
+      "scene_id": 8,
+      "concept": "Third Law - Interaction of forces between two objects",
+      "visual": "Animate the two squares pushing against each other, causing both to move slightly in opposite directions. The force arrows remain visible and equal in size but opposite in direction."
+    }
+  ]
+}

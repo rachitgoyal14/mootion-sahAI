@@ -1,0 +1,10 @@
+room, 
+        users 
+    }) 
+    document.querySelector('#sidebar').innerHTML = html 
+}) 
+Lesson 23: Automatic Scrolling 
+In this lesson, youâ€™ll add automatic scrolling to the chat application. 
+This lesson contains detailed instructions covering automatic scrolling. The function used 
+to enable autoscrolling is below, but please refer to the lesson video for a recap of how it 
+was designed.ÿÿÿ

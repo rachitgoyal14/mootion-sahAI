@@ -1,0 +1,34 @@
+[
+  {
+    "scene_id": 1,
+    "script": "Today, we will learn about Newton's Laws of Motion. There are three important laws: the First Law, the Second Law, and the Third Law. Each one explains how objects move and interact with forces."
+  },
+  {
+    "scene_id": 2,
+    "script": "Newton's First Law, also called the Law of Inertia, tells us that an object at rest will stay at rest unless acted upon by an external force."
+  },
+  {
+    "scene_id": 3,
+    "script": "Similarly, an object already in motion will continue moving at a constant velocity, meaning it keeps the same speed and direction unless a force changes it."
+  },
+  {
+    "scene_id": 4,
+    "script": "When an external force pushes on a moving object, it changes the object's velocity. This means the object can speed up, slow down, or change direction depending on the force applied."
+  },
+  {
+    "scene_id": 5,
+    "script": "Newton's Second Law explains how force, mass, and acceleration are related. The formula F equals m times a shows that force equals mass multiplied by acceleration."
+  },
+  {
+    "scene_id": 6,
+    "script": "If we apply the same force to two objects with different masses, the lighter object will accelerate faster, while the heavier object accelerates more slowly."
+  },
+  {
+    "scene_id": 7,
+    "script": "Newton's Third Law states that for every action force, there is an equal and opposite reaction force. This means forces always come in pairs, acting on two different objects."
+  },
+  {
+    "scene_id": 8,
+    "script": "When two objects push against each other, they exert equal and opposite forces, causing both to move slightly in opposite directions."
+  }
+]

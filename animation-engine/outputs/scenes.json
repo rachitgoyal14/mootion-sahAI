@@ -1,0 +1,45 @@
+{
+  "category": "maths",
+  "scenes": [
+    {
+      "scene_id": 1,
+      "concept": "Definition of a quadratic equation",
+      "visual": "Display the general form ax^2 + bx + c = 0 with animated coefficients"
+    },
+    {
+      "scene_id": 2,
+      "concept": "Graph of a quadratic function",
+      "visual": "Plot a parabola y = ax^2 + bx + c showing vertex and axis of symmetry"
+    },
+    {
+      "scene_id": 3,
+      "concept": "Standard form and vertex form",
+      "visual": "Transform equation from standard form to vertex form with step-by-step animation"
+    },
+    {
+      "scene_id": 4,
+      "concept": "Factoring method",
+      "visual": "Show factoring of a quadratic expression into two binomials visually"
+    },
+    {
+      "scene_id": 5,
+      "concept": "Completing the square",
+      "visual": "Illustrate completing the square process with geometric squares and algebraic steps"
+    },
+    {
+      "scene_id": 6,
+      "concept": "Quadratic formula derivation",
+      "visual": "Animate the derivation of the quadratic formula from the general equation"
+    },
+    {
+      "scene_id": 7,
+      "concept": "Using the quadratic formula",
+      "visual": "Substitute values into the quadratic formula and solve for roots visually"
+    },
+    {
+      "scene_id": 8,
+      "concept": "Discriminant and nature of roots",
+      "visual": "Show discriminant calculation and illustrate different root types on the graph"
+    }
+  ]
+}

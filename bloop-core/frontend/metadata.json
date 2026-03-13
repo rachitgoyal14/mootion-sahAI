@@ -1,0 +1,7 @@
+{
+  "name": "Triad - Ask, Plan, Play",
+  "description": "A unified workspace for inquiry, strategy, and creativity powered by Gemini.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
