@@ -431,8 +431,8 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ## Support & Community
 
 - 📖 **Documentation**: [Bloop Docs](https://chartreuse-vest-a4b.notion.site/Bloop-2d9dbad1b5d380ecb859dd25b9e4acf3)
-- 🐛 **GitHub Issues**: [Report bugs or request features](https://github.com/poorvikab/bloop/issues)
-- 📧 **Email**: poorvikagrover@gmail.com
+- 🐛 **GitHub Issues**: [Report bugs or request features](https://github.com/rachitgoyal14/bloop/issues)
+- 📧 **Email**: rachitgoyal14@gmail.com
 
 ---
 
