@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -82,8 +81,8 @@ def create_teacher_class_membership(db: Session, membership: TeacherClassMembers
 def get_teacher_class_membership(db: Session, teacher_id: str, class_id: str) -> TeacherClassMembership | None:
     return db.scalar(
         select(TeacherClassMembership).where(
-            TeacherClassMembership.teacher_id == teacher_id,
-            TeacherClassMembership.class_id == class_id,
+            TeacherClassMembership.teacher_id == uuid.UUID(str(teacher_id)),
+            TeacherClassMembership.class_id == uuid.UUID(str(class_id)),
         )
     )
 
@@ -91,8 +90,8 @@ def get_teacher_class_membership(db: Session, teacher_id: str, class_id: str) ->
 def get_student_class_membership(db: Session, student_id: str, class_id: str) -> StudentClassMembership | None:
     return db.scalar(
         select(StudentClassMembership).where(
-            StudentClassMembership.student_id == student_id,
-            StudentClassMembership.class_id == class_id,
+            StudentClassMembership.student_id == uuid.UUID(str(student_id)),
+            StudentClassMembership.class_id == uuid.UUID(str(class_id)),
         )
     )
 
@@ -108,7 +107,7 @@ def get_teacher_classes(db: Session, teacher_id: str) -> list[ClassRoom]:
     statement = (
         select(ClassRoom)
         .join(TeacherClassMembership, TeacherClassMembership.class_id == ClassRoom.id)
-        .where(TeacherClassMembership.teacher_id == teacher_id)
+        .where(TeacherClassMembership.teacher_id == uuid.UUID(str(teacher_id)))
         .order_by(ClassRoom.created_at.desc())
     )
     return list(db.scalars(statement).all())
@@ -118,12 +117,14 @@ def get_student_classes(db: Session, student_id: str) -> list[ClassRoom]:
     statement = (
         select(ClassRoom)
         .join(StudentClassMembership, StudentClassMembership.class_id == ClassRoom.id)
-        .where(StudentClassMembership.student_id == student_id)
+        .where(StudentClassMembership.student_id == uuid.UUID(str(student_id)))
         .order_by(ClassRoom.created_at.desc())
     )
     return list(db.scalars(statement).all())
 
 
 def get_student_ids_for_class(db: Session, class_id: str) -> list[str]:
-    statement = select(StudentClassMembership.student_id).where(StudentClassMembership.class_id == class_id)
+    statement = select(StudentClassMembership.student_id).where(
+        StudentClassMembership.class_id == uuid.UUID(str(class_id))
+    )
     return [str(student_id) for student_id in db.scalars(statement).all()]

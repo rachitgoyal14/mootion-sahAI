@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.assignments import router as assignments_router
 from app.api.chapters import router as chapters_router
 from app.api.curriculum import router as curriculum_router
+from app.api.student_assignments import router as student_assignments_router
 from app.api.teachers import router as teacher_router
 from app.api.students import router as student_router
 from app.core.database import Base, SessionLocal, engine
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(assignments_router)
+app.include_router(student_assignments_router)
 app.include_router(chapters_router)
 app.include_router(curriculum_router)
 app.include_router(teacher_router)

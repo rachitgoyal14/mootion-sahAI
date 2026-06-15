@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.models import Assignment, AssignmentRecipient, ChapterAssetGenerationJob
+from app.core.models import Assignment, AssignmentRecipient, ChapterAssetGenerationJob, StudentClassMembership
 
 
 def create_assignment(db: Session, assignment: Assignment) -> Assignment:
@@ -28,19 +29,21 @@ def create_generation_job(db: Session, job: ChapterAssetGenerationJob) -> Chapte
 
 
 def get_assignment(db: Session, assignment_id: str) -> Assignment | None:
-    return db.get(Assignment, assignment_id)
+    return db.get(Assignment, uuid.UUID(str(assignment_id)))
 
 
 def get_assignment_recipient(db: Session, assignment_id: str, student_id: str) -> AssignmentRecipient | None:
     statement = select(AssignmentRecipient).where(
-        AssignmentRecipient.assignment_id == assignment_id,
-        AssignmentRecipient.student_id == student_id,
+        AssignmentRecipient.assignment_id == uuid.UUID(str(assignment_id)),
+        AssignmentRecipient.student_id == uuid.UUID(str(student_id)),
     )
     return db.scalar(statement)
 
 
 def get_assignment_jobs(db: Session, assignment_id: str) -> list[ChapterAssetGenerationJob]:
-    statement = select(ChapterAssetGenerationJob).where(ChapterAssetGenerationJob.assignment_id == assignment_id)
+    statement = select(ChapterAssetGenerationJob).where(
+        ChapterAssetGenerationJob.assignment_id == uuid.UUID(str(assignment_id))
+    )
     return list(db.scalars(statement).all())
 
 
@@ -55,5 +58,20 @@ def get_queued_generation_job(db: Session) -> ChapterAssetGenerationJob | None:
 
 
 def list_assignments_for_class(db: Session, class_id: str) -> list[Assignment]:
-    statement = select(Assignment).where(Assignment.class_id == class_id).order_by(Assignment.created_at.desc())
+    statement = (
+        select(Assignment)
+        .where(Assignment.class_id == uuid.UUID(str(class_id)))
+        .order_by(Assignment.created_at.desc())
+    )
     return list(db.scalars(statement).all())
+
+
+def list_assignments_for_student(db: Session, student_id: str) -> list[Assignment]:
+    statement = (
+        select(Assignment)
+        .join(StudentClassMembership, StudentClassMembership.class_id == Assignment.class_id)
+        .where(StudentClassMembership.student_id == uuid.UUID(str(student_id)))
+        .order_by(Assignment.created_at.desc())
+    )
+    return list(db.scalars(statement).all())
+

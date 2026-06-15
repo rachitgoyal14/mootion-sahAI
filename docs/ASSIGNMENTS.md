@@ -161,6 +161,8 @@ Assignments and jobs both use status values.
 
 - `GET /teachers/classes/{class_id}/assignments`
 - `GET /teachers/classes/{class_id}/assignments/{assignment_id}`
+- `GET /students/classes/{class_id}/assignments`
+- `GET /students/classes/{class_id}/assignments/{assignment_id}`
 
 ## `GET /teachers/classes/{class_id}/assignments`
 
@@ -186,6 +188,41 @@ It returns:
 - class recipient list
 - queued and finished jobs
 - generation result metadata
+
+## Student Assignment Routes
+
+Students use the student routes, not the teacher routes.
+
+Why this exists:
+
+- the student experience should only expose the student's own class context
+- the response can stay slimmer than the teacher version
+- the frontend can keep a separate student view without guessing permissions
+
+### `GET /students/classes/{class_id}/assignments`
+
+Use this to show the student the activity list for one class.
+
+Returned fields:
+
+- assignment id
+- class id
+- chapter id
+- assignment type
+- title
+- status
+- job count
+
+### `GET /students/classes/{class_id}/assignments/{assignment_id}`
+
+Use this to show the student one activity in detail.
+
+It returns:
+
+- assignment metadata
+- the placeholder `content_json`
+- current generation status
+- any generated job metadata that is safe to display
 
 ## Product Mental Model
 

@@ -19,20 +19,24 @@ from app.repositories.assignment_repository import (
     get_assignment_recipient,
     get_queued_generation_job,
     list_assignments_for_class,
+    list_assignments_for_student,
 )
 from app.repositories.chapter_repository import get_assets_for_chapter, get_chapter
-from app.repositories.onboarding_repository import get_student_ids_for_class, get_teacher_class_membership
+from app.repositories.onboarding_repository import get_student_class_membership, get_student_ids_for_class, get_teacher_class_membership
 from app.schemas.assignment import (
     AssignmentCreateRequest,
     AssignmentJobResponse,
     AssignmentListItem,
     AssignmentRecipientResponse,
     AssignmentResponse,
+    StudentAssignmentListItem,
+    StudentAssignmentResponse,
 )
-from app.services.model_finder import find_model
+from app.services.model_finder import find_model, query_llm
+import json
 
 
-GENERATIONABLE_PROVIDERS = {"manim", "model_finder"}
+GENERATIONABLE_PROVIDERS = {"manim", "model_finder", "quiz_generator"}
 ALLOWED_ASSIGNMENT_TYPES = {
     "video",
     "simulation",
@@ -235,12 +239,31 @@ def create_teacher_assignment(
 
 
 def list_teacher_assignments(db: Session, user: User, class_id: str) -> list[AssignmentListItem]:
+    from sqlalchemy import func
     _ensure_teacher_has_access(db, user, class_id)
     assignments = list_assignments_for_class(db, class_id)
+    if not assignments:
+        return []
+
+    assignment_ids = [assignment.id for assignment in assignments]
+
+    # Batch retrieve job and recipient counts using group_by
+    job_counts = dict(
+        db.query(ChapterAssetGenerationJob.assignment_id, func.count(ChapterAssetGenerationJob.id))
+        .filter(ChapterAssetGenerationJob.assignment_id.in_(assignment_ids))
+        .group_by(ChapterAssetGenerationJob.assignment_id)
+        .all()
+    )
+
+    recipient_counts = dict(
+        db.query(AssignmentRecipient.assignment_id, func.count(AssignmentRecipient.id))
+        .filter(AssignmentRecipient.assignment_id.in_(assignment_ids))
+        .group_by(AssignmentRecipient.assignment_id)
+        .all()
+    )
+
     response: list[AssignmentListItem] = []
     for assignment in assignments:
-        jobs = get_assignment_jobs(db, str(assignment.id))
-        recipients = db.query(AssignmentRecipient).filter(AssignmentRecipient.assignment_id == assignment.id).all()
         response.append(
             AssignmentListItem(
                 assignment_id=str(assignment.id),
@@ -249,8 +272,8 @@ def list_teacher_assignments(db: Session, user: User, class_id: str) -> list[Ass
                 assignment_type=assignment.assignment_type,
                 title=assignment.title,
                 status=assignment.status,
-                recipient_count=len(recipients),
-                job_count=len(jobs),
+                recipient_count=recipient_counts.get(assignment.id, 0),
+                job_count=job_counts.get(assignment.id, 0),
             )
         )
     return response
@@ -262,6 +285,69 @@ def get_teacher_assignment(db: Session, user: User, class_id: str, assignment_id
     if not assignment or str(assignment.class_id) != class_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
     return _assignment_to_response(db, assignment)
+
+
+def _student_assignment_to_response(db: Session, assignment: Assignment) -> StudentAssignmentResponse:
+    jobs = [_chapter_asset_to_job_response(job) for job in get_assignment_jobs(db, str(assignment.id))]
+    return StudentAssignmentResponse(
+        assignment_id=str(assignment.id),
+        class_id=str(assignment.class_id),
+        chapter_id=str(assignment.chapter_id),
+        assignment_type=assignment.assignment_type,
+        title=assignment.title,
+        instructions=assignment.instructions,
+        content_json=assignment.content_json,
+        status=assignment.status,
+        jobs=jobs,
+    )
+
+
+def list_student_assignments(db: Session, user: User, class_id: str) -> list[StudentAssignmentListItem]:
+    from sqlalchemy import func
+    membership = get_student_class_membership(db, str(user.id), class_id)
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    # Direct DB filtering by class_id
+    assignments = db.query(Assignment).filter(Assignment.class_id == class_id).order_by(Assignment.created_at.desc()).all()
+    if not assignments:
+        return []
+
+    assignment_ids = [assignment.id for assignment in assignments]
+
+    # Batch retrieve job counts
+    job_counts = dict(
+        db.query(ChapterAssetGenerationJob.assignment_id, func.count(ChapterAssetGenerationJob.id))
+        .filter(ChapterAssetGenerationJob.assignment_id.in_(assignment_ids))
+        .group_by(ChapterAssetGenerationJob.assignment_id)
+        .all()
+    )
+
+    return [
+        StudentAssignmentListItem(
+            assignment_id=str(assignment.id),
+            class_id=str(assignment.class_id),
+            chapter_id=str(assignment.chapter_id),
+            assignment_type=assignment.assignment_type,
+            title=assignment.title,
+            status=assignment.status,
+            job_count=job_counts.get(assignment.id, 0),
+        )
+        for assignment in assignments
+    ]
+
+
+
+def get_student_assignment(db: Session, user: User, class_id: str, assignment_id: str) -> StudentAssignmentResponse:
+    membership = get_student_class_membership(db, str(user.id), class_id)
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    assignment = get_assignment(db, assignment_id)
+    if not assignment or str(assignment.class_id) != class_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+
+    return _student_assignment_to_response(db, assignment)
 
 
 def _run_manim_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
@@ -309,6 +395,32 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
     db.commit()
 
 
+def _run_quiz_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
+    topic = payload_json.get("chapter_title") or asset.title
+    prompt = f"""
+    You are a science teacher. Generate a quiz containing exactly 3 multiple-choice questions for school students on the topic: "{topic}".
+    For each question, provide 4 options and specify the index of the correct option (0-based).
+    Return ONLY a valid JSON array of objects with the following keys:
+    - "question" (string)
+    - "options" (array of 4 strings)
+    - "correctAnswer" (integer, 0 to 3)
+
+    Do not include markdown tags like ```json or any other text. Output exactly the raw JSON array.
+    """
+    try:
+        res = query_llm(prompt)
+        text = res.get("response", "").strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        questions = json.loads(text)
+        return {"questions": questions}
+    except Exception as e:
+        return {"error": f"Failed to generate quiz: {str(e)}"}
+
+
 def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
     asset = db.get(ChapterAsset, job.chapter_asset_id)
     if not asset:
@@ -328,6 +440,8 @@ def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
             result = _run_manim_generation(asset, job.payload_json)
         elif job.provider == "model_finder":
             result = _run_model_finder_generation(asset, job.payload_json)
+        elif job.provider == "quiz_generator":
+            result = _run_quiz_generation(asset, job.payload_json)
         else:
             raise RuntimeError(f"Unsupported provider: {job.provider}")
 

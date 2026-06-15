@@ -54,7 +54,7 @@ PLACEHOLDER_ASSETS = [
     },
     {
         "asset_type": "quiz",
-        "provider": "placeholder",
+        "provider": "quiz_generator",
         "integration_target": "quiz_builder",
         "title": "Quiz",
         "description": "Placeholder for the class quiz activity.",
@@ -167,6 +167,9 @@ def _create_placeholder_asset(db: Session, chapter: Chapter, asset_config: dict)
 
 
 def bootstrap_chapters_from_curriculum(db: Session, user: User, class_id: str, curriculum_id: str) -> ChapterBootstrapResponse:
+    import uuid
+    from sqlalchemy import select
+
     _ensure_teacher_has_access(db, user, class_id)
 
     curriculum = get_curriculum_plan(db, curriculum_id)
@@ -177,28 +180,54 @@ def bootstrap_chapters_from_curriculum(db: Session, user: User, class_id: str, c
     root = curriculum_data.get("root") or {}
     children = root.get("children", []) or []
 
+    # Batch retrieve existing chapters for this curriculum to avoid SELECT in a loop
+    existing_chapters = db.scalars(
+        select(Chapter).where(Chapter.curriculum_id == curriculum.id)
+    ).all()
+    existing_node_ids = {c.source_node_id for c in existing_chapters if c.source_node_id}
+
     created = 0
     for index, child in enumerate(children):
-        existing = get_chapter_by_curriculum_node(db, curriculum_id, child.get("id"))
-        if existing:
+        node_id = child.get("id")
+        if node_id in existing_node_ids:
             continue
 
-        chapter = create_chapter(
-            db,
-            Chapter(
-                class_id=curriculum.class_id,
-                curriculum_id=curriculum.id,
-                source_node_id=child.get("id"),
-                sequence_number=index,
-                title=child.get("title", f"Chapter {index + 1}"),
-                status="unset",
-            ),
+        chapter_id = uuid.uuid4()
+        chapter = Chapter(
+            id=chapter_id,
+            class_id=curriculum.class_id,
+            curriculum_id=curriculum.id,
+            source_node_id=node_id,
+            sequence_number=index,
+            title=child.get("title", f"Chapter {index + 1}"),
+            status="unset",
         )
+        db.add(chapter)
 
         for asset_config in PLACEHOLDER_ASSETS:
-            _create_placeholder_asset(db, chapter, asset_config)
+            asset = ChapterAsset(
+                chapter_id=chapter_id,
+                asset_type=asset_config["asset_type"],
+                provider=asset_config["provider"],
+                integration_target=asset_config["integration_target"],
+                title=asset_config["title"],
+                description=asset_config["description"],
+                payload_json=asset_config["payload_json"] | {
+                    "placeholder": True,
+                    "chapter_id": str(chapter_id),
+                    "asset_type": asset_config["asset_type"],
+                    "provider": asset_config["provider"],
+                    "integration_target": asset_config["integration_target"],
+                },
+                generation_status="placeholder",
+                external_url=None,
+            )
+            db.add(asset)
 
         created += 1
+
+    if created > 0:
+        db.commit()
 
     return ChapterBootstrapResponse(
         class_id=str(class_id),
@@ -208,8 +237,22 @@ def bootstrap_chapters_from_curriculum(db: Session, user: User, class_id: str, c
 
 
 def list_class_chapters(db: Session, user: User, class_id: str) -> list[ChapterListItem]:
+    from sqlalchemy import func
     _ensure_teacher_has_access(db, user, class_id)
     chapters = list_chapters_for_class(db, class_id)
+    if not chapters:
+        return []
+
+    chapter_ids = [chapter.id for chapter in chapters]
+
+    # Batch retrieve asset counts using group_by
+    asset_counts = dict(
+        db.query(ChapterAsset.chapter_id, func.count(ChapterAsset.id))
+        .filter(ChapterAsset.chapter_id.in_(chapter_ids))
+        .group_by(ChapterAsset.chapter_id)
+        .all()
+    )
+
     return [
         ChapterListItem(
             chapter_id=str(chapter.id),
@@ -217,10 +260,11 @@ def list_class_chapters(db: Session, user: User, class_id: str) -> list[ChapterL
             sequence_number=chapter.sequence_number,
             title=chapter.title,
             status=chapter.status,
-            asset_count=len(get_assets_for_chapter(db, str(chapter.id))),
+            asset_count=asset_counts.get(chapter.id, 0),
         )
         for chapter in chapters
     ]
+
 
 
 def get_class_chapter(db: Session, user: User, class_id: str, chapter_id: str) -> ChapterResponse:

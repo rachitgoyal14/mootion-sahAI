@@ -164,6 +164,14 @@ List assignments for the class.
 
 Fetch one assignment and its job state.
 
+### `GET /students/classes/{class_id}/assignments`
+
+List assignments visible to a student for one class.
+
+### `GET /students/classes/{class_id}/assignments/{assignment_id}`
+
+Fetch one student-visible assignment for a class.
+
 ## Practical Flow
 
 1. Authenticate.

@@ -343,3 +343,47 @@ class ChapterAssetGenerationJob(Base):
     queued_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class StudentAttempt(Base):
+    __tablename__ = "student_attempts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False, index=True)
+    score_understanding = Column(Integer, nullable=False, default=0)
+    score_reasoning = Column(Integer, nullable=False, default=0)
+    score_expression = Column(Integer, nullable=False, default=0)
+    transcription_text = Column(Text, nullable=True)
+    ai_feedback = Column(Text, nullable=True)
+    attempt_language = Column(String(20), nullable=False, default="english")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class StudentDoubt(Base):
+    __tablename__ = "student_doubts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    topic = Column(String(255), nullable=False)
+    query_text = Column(Text, nullable=False)
+    tried_before = Column(Boolean, nullable=False, default=False)
+    attempt_text = Column(Text, nullable=True)
+    clarification_video_url = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")  # "pending", "resolved"
+    response_text = Column(Text, nullable=True)
+    response_audio_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UserQuota(Base):
+    __tablename__ = "user_quotas"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    doubt_videos_used_today = Column(Integer, nullable=False, default=0)
+    playground_items_used_week = Column(Integer, nullable=False, default=0)
+    last_doubt_reset = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_playground_reset = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+

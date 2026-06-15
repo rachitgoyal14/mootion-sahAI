@@ -49,3 +49,25 @@ class AssignmentListItem(BaseModel):
     status: str
     recipient_count: int
     job_count: int
+
+
+class StudentAssignmentListItem(BaseModel):
+    assignment_id: str
+    class_id: str
+    chapter_id: str
+    assignment_type: str
+    title: str
+    status: str
+    job_count: int
+
+
+class StudentAssignmentResponse(BaseModel):
+    assignment_id: str
+    class_id: str
+    chapter_id: str
+    assignment_type: str
+    title: str
+    instructions: str | None
+    content_json: dict[str, Any]
+    status: str
+    jobs: list[AssignmentJobResponse] = Field(default_factory=list)
