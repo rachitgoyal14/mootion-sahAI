@@ -122,11 +122,15 @@ class PromptUnderstandingLayer:
         concepts = self._extract_concepts(prompt_lower, subject)
         topic = self._extract_topic(prompt, prompt_lower, subject, concepts)
 
+        had_match = self._has_any_keyword_match(prompt_lower)
+
         if self.use_llm:
             try:
                 llm_intent = self._llm_enhanced_understanding(prompt)
-                if llm_intent and llm_intent.confidence > 0.5:
-                    return llm_intent
+                if llm_intent:
+                    threshold = 0.3 if not had_match else 0.5
+                    if llm_intent.confidence > threshold:
+                        return llm_intent
             except Exception:
                 pass
 
@@ -136,9 +140,19 @@ class PromptUnderstandingLayer:
             concepts=concepts,
             simulation_type=simulation_type,
             grade_level=self._estimate_grade_level(prompt_lower),
-            confidence=0.7,
+            confidence=0.4 if not had_match else 0.7,
             raw_prompt=prompt,
         )
+
+    def _has_any_keyword_match(self, prompt_lower: str) -> bool:
+        for keywords in SUBJECT_KEYWORDS.values():
+            for kw in keywords:
+                if self._word_in_text(kw, prompt_lower):
+                    return True
+        for _, keyword, _ in SIMULATION_TYPE_MAP:
+            if self._word_in_text(keyword, prompt_lower):
+                return True
+        return False
 
     @staticmethod
     def _word_in_text(word: str, text: str) -> bool:
@@ -257,16 +271,32 @@ Rules:
 
         try:
             data = json.loads(response)
+            sim_type_str = data.get("simulation_type", "custom")
+            sim_type = self._resolve_simulation_type(sim_type_str)
             return SimulationIntent(
                 subject=Subject(data.get("subject", "physics")),
                 topic=data.get("topic", ""),
                 concepts=data.get("concepts", []),
-                simulation_type=SimulationType(
-                    data.get("simulation_type", "custom")
-                ),
+                simulation_type=sim_type,
                 grade_level=data.get("grade_level", "high_school"),
                 confidence=float(data.get("confidence", 0.7)),
                 raw_prompt=prompt,
             )
         except (json.JSONDecodeError, ValueError, KeyError):
             return None
+
+    @staticmethod
+    def _resolve_simulation_type(type_str: str) -> SimulationType:
+        try:
+            return SimulationType(type_str)
+        except ValueError:
+            pass
+        type_lower = type_str.lower().replace(" ", "_")
+        try:
+            return SimulationType(type_lower)
+        except ValueError:
+            pass
+        for _, keyword, sim_type in SIMULATION_TYPE_MAP:
+            if keyword in type_lower or type_lower in keyword:
+                return sim_type
+        return SimulationType.CUSTOM

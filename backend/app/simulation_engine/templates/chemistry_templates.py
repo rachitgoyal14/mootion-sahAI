@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.simulation_engine.schemas import SimulationSpecification
-from app.simulation_engine.templates.base_template import build_simulation_html
+from app.simulation_engine.templates.base_template import build_simulation_html, build_custom_llm_simulation
 
 
 ATOMIC_STRUCTURE_ENGINE = """
@@ -439,7 +439,7 @@ def build_chemistry_simulation(spec: SimulationSpecification) -> str:
     elif sim_type == "reactions":
         return build_simulation_html(spec, custom_script=REACTIONS_ENGINE)
     else:
-        return build_simulation_html(spec, custom_script=_generic_chemistry_script())
+        return build_simulation_html(spec, custom_script=build_custom_llm_simulation(spec))
 
 
 def _generic_chemistry_script() -> str:

@@ -670,3 +670,125 @@ def _build_assessment_html(spec: SimulationSpecification) -> str:
 
 def _build_presets_html(spec: SimulationSpecification) -> str:
     return ""
+
+
+def build_custom_llm_simulation(spec: SimulationSpecification) -> str:
+    """Generate a custom simulation via LLM for topics not covered by built-in templates.
+    Returns the JavaScript code string containing all 4 classes."""
+    from app.simulation_engine.prompt_understanding_layer import query_llm
+
+    objectives_text = "; ".join(spec.learning_objectives) if spec.learning_objectives else spec.topic
+    params_text = "\n".join(
+        f"  - {p.name} ({p.symbol}): range {p.min}-{p.max}, default {p.default}, unit: {p.unit}"
+        for p in spec.parameters
+    ) if spec.parameters else "  - (no predefined parameters)"
+
+    llm_prompt = f"""Generate JavaScript classes for an interactive HTML5 Canvas educational simulation.
+
+TOPIC: {spec.topic}
+SUBJECT: {spec.subject.value.upper()}
+OBJECTIVES: {objectives_text}
+PARAMETERS:
+{params_text}
+
+Generate ONLY the following 4 JavaScript classes. No markdown fences, no HTML, no explanations.
+
+1. SimulationEngine — handles physics/science logic:
+```
+class SimulationEngine {{
+  constructor(canvas, state, bus) {{
+    this.canvas = canvas; this.state = state; this.bus = bus;
+    this.time = 0;
+  }}
+  update(dt, state) {{
+    // dt in seconds; read params via state.get('param_id')
+    // publish computed values via state.set('key', value)
+  }}
+  onReset() {{ this.time = 0; }}
+  canvasInteractions(canvas, state, bus) {{}}
+  getHint() {{ return 'Interactive hint'; }}
+}}
+```
+
+2. Renderer — draws on canvas:
+```
+class Renderer {{
+  constructor(canvas, state, bus) {{
+    this.canvas = canvas; this.ctx = canvas.getContext('2d');
+    this.state = state; this.bus = bus;
+  }}
+  draw(dt, state) {{
+    const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, w, h);
+    // Draw grid, visualization, and data labels
+    // Show real-time values at top-left
+  }}
+}}
+```
+
+3. ControlsManager — standard pattern (copy exactly):
+```
+class ControlsManager {{
+  constructor(state, bus) {{ this.state = state; this.bus = bus; this.sliders = []; }}
+  bind() {{
+    var self = this;
+    document.querySelectorAll('input[type="range"]').forEach(function(input) {{
+      if (input.id === 'speed-slider') return;
+      var key = input.id; self.sliders.push(input);
+      self.state.set(key, parseFloat(input.value));
+      input.addEventListener('input', function() {{
+        var val = parseFloat(this.value);
+        self.state.set(key, val);
+        var badge = document.getElementById('badge-' + key);
+        if (badge) badge.textContent = val.toFixed(1);
+      }});
+    }});
+  }}
+  sync() {{ this.sliders.forEach(function(input) {{ var val = this.state.get(input.id); if (val !== undefined) input.value = val; }}, this); }}
+  syncLabels() {{
+    var all = this.state.getAll();
+    this.sliders.forEach(function(input) {{
+      var val = all[input.id]; if (val !== undefined) {{
+        var badge = document.getElementById('badge-' + input.id);
+        if (badge) badge.textContent = typeof val === 'number' ? val.toFixed(1) : val;
+      }}
+    }});
+  }}
+}}
+```
+
+4. AssessmentEngine — standard pattern:
+```
+class AssessmentEngine {{
+  constructor(state, bus) {{ this.state = state; this.bus = bus; }}
+  getCurrentQuestion() {{ return document.getElementById('assess-q')?.textContent || ''; }}
+}}
+```
+
+RULES:
+- Make it scientifically accurate with real formulas and behaviors
+- Use color palette: #6366f1 (primary), #10b981 (green), #ef4444 (red), #f59e0b (amber), #0ea5e9 (blue)
+- Show real-time data labels on the canvas (top-left corner using ctx.fillText)
+- StateManager uses state.get() and state.set() methods
+- Canvas dimensions: this.canvas.width, this.canvas.height
+- Draw grid lines: ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 0.5; for x in steps of 40
+- Return ONLY the raw JavaScript with all 4 classes, no markdown fences, no HTML."""
+
+    try:
+        js_code = query_llm(llm_prompt, temperature=0.3)
+        js_code = js_code.strip()
+        if js_code.startswith("```"):
+            idx = js_code.find("\n")
+            if idx != -1:
+                js_code = js_code[idx+1:]
+            else:
+                js_code = js_code[3:]
+        if js_code.endswith("```"):
+            js_code = js_code[:-3]
+        js_code = js_code.strip()
+        if "class SimulationEngine" not in js_code or "class Renderer" not in js_code:
+            return _default_classes()
+        return js_code
+    except Exception:
+        return _default_classes()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.simulation_engine.schemas import SimulationSpecification
-from app.simulation_engine.templates.base_template import build_simulation_html
+from app.simulation_engine.templates.base_template import build_simulation_html, build_custom_llm_simulation
 
 
 FUNCTIONS_ENGINE = """
@@ -277,7 +277,7 @@ def build_math_simulation(spec: SimulationSpecification) -> str:
     elif sim_type == "geometry":
         return build_simulation_html(spec, custom_script=_geometry_script())
     else:
-        return build_simulation_html(spec, custom_script=_generic_math_script())
+        return build_simulation_html(spec, custom_script=build_custom_llm_simulation(spec))
 
 
 def _statistics_script() -> str:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.simulation_engine.schemas import SimulationSpecification, SimulationType
-from app.simulation_engine.templates.base_template import build_simulation_html
+from app.simulation_engine.templates.base_template import build_simulation_html, build_custom_llm_simulation
 import json
 
 
@@ -305,7 +305,7 @@ def build_physics_simulation(spec: SimulationSpecification) -> str:
     elif sim_type == "buoyancy":
         return _build_buoyancy(spec)
     else:
-        return build_simulation_html(spec, custom_script=_build_generic_physics(spec))
+        return build_simulation_html(spec, custom_script=build_custom_llm_simulation(spec))
 
 
 def _build_projectile_motion(spec: SimulationSpecification) -> str:

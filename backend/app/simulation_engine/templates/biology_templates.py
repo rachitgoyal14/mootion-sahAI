@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.simulation_engine.schemas import SimulationSpecification
-from app.simulation_engine.templates.base_template import build_simulation_html
+from app.simulation_engine.templates.base_template import build_simulation_html, build_custom_llm_simulation
 
 
 DIFFUSION_ENGINE = """
@@ -292,7 +292,7 @@ def build_biology_simulation(spec: SimulationSpecification) -> str:
     elif sim_type == "membrane_transport":
         return build_simulation_html(spec, custom_script=_membrane_transport_script())
     else:
-        return build_simulation_html(spec, custom_script=_generic_biology_script())
+        return build_simulation_html(spec, custom_script=build_custom_llm_simulation(spec))
 
 
 def _membrane_transport_script() -> str:
