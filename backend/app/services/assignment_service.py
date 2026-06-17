@@ -35,7 +35,7 @@ from app.services.model_finder import find_model, query_llm
 import json
 
 
-GENERATIONABLE_PROVIDERS = {"manim", "model_finder", "quiz_generator"}
+GENERATIONABLE_PROVIDERS = {"manim", "model_finder", "quiz_generator", "simulation"}
 ALLOWED_ASSIGNMENT_TYPES = {
     "video",
     "simulation",
@@ -397,6 +397,8 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
             asset.external_url = str(result.get("embedUrl") or result.get("viewerUrl") or "") or None
         elif job.provider == "quiz_generator":
             asset.payload_json = {**asset.payload_json, "quiz": result.get("questions", [])}
+        elif job.provider == "simulation":
+            asset.external_url = str(result.get("simulation_id") or "") or None
     else:
         asset.generation_status = "failed"
         asset.payload_json = {**asset.payload_json, "generated": False, "result": result}
@@ -430,6 +432,25 @@ def _run_quiz_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, o
         return {"error": f"Failed to generate quiz: {str(e)}"}
 
 
+def _run_simulation_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
+    from app.simulation_engine.pipeline import SimulationPipeline
+
+    topic = payload_json.get("chapter_title") or asset.title
+    instructions = payload_json.get("instructions") or ""
+    prompt = f"Teach me {topic}. {instructions}".strip()
+
+    pipeline = SimulationPipeline()
+    result = pipeline.run(prompt)
+
+    return {
+        "simulation_id": result.simulation_id,
+        "html": result.html,
+        "phase": result.phase.value,
+        "quality_score": result.quality_score,
+        "error": result.error,
+    }
+
+
 def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
     asset = db.get(ChapterAsset, job.chapter_asset_id)
     if not asset:
@@ -451,6 +472,8 @@ def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
             result = _run_model_finder_generation(asset, job.payload_json)
         elif job.provider == "quiz_generator":
             result = _run_quiz_generation(asset, job.payload_json)
+        elif job.provider == "simulation":
+            result = _run_simulation_generation(asset, job.payload_json)
         else:
             raise RuntimeError(f"Unsupported provider: {job.provider}")
 

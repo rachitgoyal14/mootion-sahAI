@@ -15,6 +15,8 @@ from app.core import models  # noqa: F401
 from app.repositories.onboarding_repository import get_or_create_default_school
 from app.services.media_queue import enqueue_pending_media_jobs
 from app.services.media_service import ensure_media_bucket
+from app.services.assignment_service import start_assignment_queue_worker, stop_assignment_queue_worker
+from app.api.simulation import router as simulation_router
 
 
 Base.metadata.create_all(bind=engine)
@@ -44,6 +46,7 @@ app.include_router(media_router)
 app.include_router(curriculum_router)
 app.include_router(teacher_router)
 app.include_router(student_router)
+app.include_router(simulation_router)
 
 
 @app.on_event("startup")
