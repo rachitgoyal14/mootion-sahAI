@@ -15,6 +15,23 @@ import {
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
+export const getSketchfabEmbedUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.includes('/embed')) return url;
+  if (url.includes('sketchfab.com')) {
+    const parts = url.split('/');
+    const filteredParts = parts.filter(Boolean);
+    const lastPart = filteredParts[filteredParts.length - 1];
+    const uidMatch = lastPart.match(/([a-f0-9]{32})/i);
+    if (uidMatch) {
+      return `https://sketchfab.com/models/${uidMatch[1]}/embed`;
+    }
+    if (/^[a-f0-9]{32}$/i.test(lastPart)) {
+      return `https://sketchfab.com/models/${lastPart}/embed`;
+    }
+  }
+  return url;
+};
 
 export function TeacherTopicSetupPage() {
   const { classId, chapterId, topicId } = useParams<{ classId: string; chapterId: string; topicId: string }>();
@@ -296,9 +313,7 @@ export function TeacherTopicSetupPage() {
                     />
                   ) : activeAsset.asset_type === 'three_d_model' ? (
                     <iframe
-                      src={activeAsset.external_url.includes('sketchfab.com') && !activeAsset.external_url.includes('/embed')
-                        ? activeAsset.external_url + '/embed'
-                        : activeAsset.external_url}
+                      src={getSketchfabEmbedUrl(activeAsset.external_url)}
                       title="3D Model Viewer"
                       allowFullScreen
                       className="w-full h-full border-0"

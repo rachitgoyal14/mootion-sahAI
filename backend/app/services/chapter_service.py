@@ -353,10 +353,12 @@ def generate_chapter_asset(
 
         _apply_direct_generation_result(db, asset, result, prompt=generation_prompt)
         db.commit()
+        print("[media-worker] Asset update committed to DB", flush=True)
     except Exception as exc:
         asset.generation_status = "failed"
         asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
         db.commit()
+        print("[media-worker] Asset update committed to DB", flush=True)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     db.refresh(asset)

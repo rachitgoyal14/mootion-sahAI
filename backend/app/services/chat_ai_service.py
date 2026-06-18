@@ -434,10 +434,44 @@ def _run_video_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
     )
     response.raise_for_status()
     data = response.json()
+
+    # Upload generated video to Cloudflare R2
+    video_id = data.get("video_id")
+    external_url = None
+    if video_id:
+        try:
+            from app.services.media_service import download_manim_video
+            from app.core.storage import get_object_storage_client, presigned_media_url
+            from io import BytesIO
+            
+            print(f"[chat-ai] Downloading generated Manim video bytes for video_id: {video_id}...", flush=True)
+            video_bytes, content_type = download_manim_video(video_id)
+            
+            object_key = f"chat-assets/videos/{video_id}.mp4"
+            client = get_object_storage_client()
+            bucket = settings.object_storage_bucket
+            
+            print(f"[chat-ai] Uploading chat video to R2 (bucket={bucket}, key={object_key})...", flush=True)
+            client.put_object(
+                bucket,
+                object_key,
+                BytesIO(video_bytes),
+                len(video_bytes),
+                content_type=content_type
+            )
+            print(f"[chat-ai] Chat video upload complete.", flush=True)
+            external_url = presigned_media_url(bucket, object_key)
+            print(f"[chat-ai] Generated external url: {external_url}", flush=True)
+        except Exception as upload_exc:
+            print(f"[chat-ai] Warning: Failed to upload generated video to R2: {upload_exc}", flush=True)
+            
+    if not external_url:
+        external_url = data.get("video_url") or data.get("video_path") or data.get("url")
+
     return {
         "asset_type": "video",
         "title": "Explanation video",
-        "external_url": data.get("video_url") or data.get("video_path") or data.get("url"),
+        "external_url": external_url,
         "payload_json": data,
     }
 

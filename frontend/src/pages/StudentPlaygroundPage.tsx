@@ -51,6 +51,7 @@ import {
   setTeacherAssignedNew 
 } from '../data/taskStore';
 import { NavItem } from '../components/NavItem';
+import { getSketchfabEmbedUrl } from './TeacherTopicSetupPage';
 
 interface ChatMessage {
   id: string;
@@ -59,13 +60,14 @@ interface ChatMessage {
   timestamp: string;
   commandExecuted?: string;
   payload?: {
-    type: 'video' | 'simulation' | 'universe' | 'quiz' | 'subject_picker';
+    type: 'video' | 'simulation' | 'universe' | 'quiz' | 'subject_picker' | 'three_d_model';
     title: string;
     // Specific metadata
     video?: {
       storyboard: { step: number; title: string; description: string; duration: string; illustration: string }[];
       topic: string;
       chapters: string[];
+      url?: string;
     };
     simulation?: {
       objectDensity: number; // kg/m^3
@@ -75,6 +77,10 @@ interface ChatMessage {
     universe?: {
       subject: string;
       systemType: 'solar' | 'atom' | 'cell';
+    };
+    three_d_model?: {
+      embedUrl: string;
+      viewerUrl?: string;
     };
     quiz?: {
       currentQuestionIdx: number;
@@ -399,7 +405,7 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
     };
   }
 
-  if (type === 'video') {
+  if (type === 'video' || type === 'concept_video') {
     return {
       type: 'video',
       title: asset.title ?? 'Video',
@@ -409,7 +415,8 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
         storyboard: [
           { step: 1, title: 'Introduction', description: asset.description ?? '', duration: '0:35', illustration: '🎬' },
         ],
-      },
+        url: asset.external_url ?? asset.payload_json?.video_url ?? '',
+      } as any,
     };
   }
 
@@ -439,12 +446,13 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
   }
 
   if (type === 'model' || type === 'three_d_model') {
+    const url = asset.external_url ?? asset.payload_json?.embedUrl ?? asset.payload_json?.viewerUrl ?? '';
     return {
-      type: 'universe',
+      type: 'three_d_model',
       title: asset.title ?? '3D Model',
-      universe: {
-        subject: 'Physics',
-        systemType: 'solar',
+      three_d_model: {
+        embedUrl: url,
+        viewerUrl: asset.payload_json?.viewerUrl ?? '',
       },
     };
   }
@@ -1720,10 +1728,9 @@ export function StudentPlaygroundPage() {
         {/* Real Playable HTML5 Video Player */}
         <div className="relative aspect-video rounded-2xl bg-black overflow-hidden border border-[#1800ad]/20 flex flex-col shadow-inner">
           <video 
-            src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" 
+            src={payload.video?.url || "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"} 
             controls 
             className="w-full h-full object-cover"
-            poster="https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg"
           />
         </div>
 
@@ -1995,6 +2002,51 @@ export function StudentPlaygroundPage() {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render inline interactive Sketchfab 3D model viewer
+  const renderThreeDModelCard = (payload: any) => {
+    const title = payload.title || "Interactive 3D Model";
+    const embedUrl = payload.three_d_model?.embedUrl || '';
+    
+    return (
+      <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-3 font-montserrat">
+        <div className="flex items-center justify-between border-b border-[#1800ad]/20 pb-2 font-montserrat">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-[#1800ad] text-[#f6f4ee] flex items-center justify-center">
+              <Layers size={16} />
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase tracking-wider text-[#1800ad] font-montserrat">{title}</h4>
+              <p className="text-[10px] text-[#1800ad]/70 font-semibold font-montserrat">Sketchfab Interactive 3D Model</p>
+            </div>
+          </div>
+          <span className="text-[9px] px-2.5 py-1 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-full font-bold uppercase font-montserrat">
+            3D Viewer Active
+          </span>
+        </div>
+
+        {/* Live Sketchfab 3D Iframe */}
+        <div className="w-full aspect-video rounded-2xl overflow-hidden border-2 border-[#1800ad]/20 bg-white" style={{ minHeight: '350px' }}>
+          {embedUrl ? (
+            <iframe 
+              src={getSketchfabEmbedUrl(embedUrl)} 
+              className="w-full h-full border-0"
+              title={title}
+              allowFullScreen
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs font-semibold text-[#1800ad]/50 italic">
+              No 3D model URL available.
+            </div>
+          )}
+        </div>
+
+        <div className="text-[10px] text-[#1800ad]/75 font-medium leading-relaxed bg-[#1800ad]/5 p-2.5 rounded-xl border border-[#1800ad]/15 font-montserrat">
+          Interact directly with the 3D canvas (drag to rotate, scroll to zoom, right-click to pan) to inspect the model.
         </div>
       </div>
     );
@@ -2364,6 +2416,7 @@ export function StudentPlaygroundPage() {
                             {m.payload.type === 'video' && renderVideoCard(m.payload)}
                             {m.payload.type === 'simulation' && renderSimulationCard(m.payload)}
                             {m.payload.type === 'universe' && renderUniverseOrbitalCard(m.payload)}
+                            {m.payload.type === 'three_d_model' && renderThreeDModelCard(m.payload)}
                             {m.payload.type === 'quiz' && <InteractiveQuizCard payload={m.payload} />}
                             {m.payload.type === 'subject_picker' && renderSubjectPickerCard(m.payload)}
                           </div>

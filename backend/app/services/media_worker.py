@@ -39,7 +39,42 @@ def process_media_generation_job(job_id: str) -> None:
 
 
 def run_worker() -> None:
-    redis = get_redis_connection()
+    print(f"[media-worker] Starting worker. Connecting to Redis at {settings.redis_url}...", flush=True)
+    try:
+        redis = get_redis_connection()
+        ping_res = redis.ping()
+        print(f"[media-worker] Redis connection verified: ping result -> {ping_res}", flush=True)
+    except Exception as exc:
+        print(f"[media-worker] ERROR: Redis connection test failed at {settings.redis_url}. Details: {exc}", flush=True)
+        # Re-raise to ensure startup fails if queue is unreachable
+        raise exc
+
+    # Test object storage upload on startup
+    print(f"[media-worker] Testing object storage credentials (bucket={settings.object_storage_bucket}, endpoint={settings.object_storage_endpoint})...", flush=True)
+    try:
+        from app.core.storage import get_object_storage_client
+        from io import BytesIO
+        client = get_object_storage_client()
+        if not client.bucket_exists(settings.object_storage_bucket):
+            client.make_bucket(settings.object_storage_bucket)
+            print(f"[media-worker] Created object storage bucket '{settings.object_storage_bucket}'", flush=True)
+        else:
+            print(f"[media-worker] Object storage bucket '{settings.object_storage_bucket}' exists", flush=True)
+        
+        test_key = "test_worker_startup.txt"
+        test_data = b"Mootion worker startup connectivity check"
+        client.put_object(
+            settings.object_storage_bucket,
+            test_key,
+            BytesIO(test_data),
+            len(test_data),
+            content_type="text/plain"
+        )
+        print("[media-worker] Object storage startup test upload succeeded!", flush=True)
+    except Exception as exc:
+        print(f"[media-worker] ERROR: Object storage startup credentials check failed. Details: {exc}", flush=True)
+        # Re-raise to prevent starting worker with invalid storage config
+        raise exc
 
     def _stop(*_args):
         global _should_stop

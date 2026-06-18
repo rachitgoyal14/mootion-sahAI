@@ -48,22 +48,44 @@ def download_manim_video(video_id: str) -> tuple[bytes, str]:
 
 
 def store_generated_manim_video(asset: ChapterAsset, job_id: str, video_id: str) -> dict[str, Any]:
+    import os
     ensure_media_bucket()
     client = get_object_storage_client()
+    
+    # Check if the generated video file exists locally on disk in animation-engine outputs
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    local_video_path = os.path.join(base_dir, "animation-engine/outputs/videos", video_id, "final.mp4")
+    file_exists = os.path.exists(local_video_path)
+    file_size = os.path.getsize(local_video_path) if file_exists else 0
+    
+    print(f"[media-worker] Starting R2 upload for asset {asset.id}", flush=True)
+    print(f"[media-worker] Local file path: {local_video_path}, file exists: {file_exists}, size: {file_size} bytes", flush=True)
+
+    print(f"[media-worker] Downloading Manim video bytes for video_id: {video_id}...", flush=True)
     video_bytes, content_type = download_manim_video(video_id)
+    print(f"[media-worker] Downloaded {len(video_bytes)} bytes of video {video_id} (content_type={content_type}).", flush=True)
+    
     object_key = build_asset_object_key(str(asset.id), job_id)
 
-    client.put_object(
-        settings.object_storage_bucket,
-        object_key,
-        BytesIO(video_bytes),
-        len(video_bytes),
-        content_type=content_type,
-    )
+    try:
+        client.put_object(
+            settings.object_storage_bucket,
+            object_key,
+            BytesIO(video_bytes),
+            len(video_bytes),
+            content_type=content_type,
+        )
+        print(f"[media-worker] Upload complete, R2 key: {object_key}", flush=True)
+    except Exception as exc:
+        import traceback
+        print(f"[media-worker] ERROR: Object storage upload failed for key: {object_key}. Details: {exc}", flush=True)
+        traceback.print_exc()
+        raise exc
 
     asset.storage_bucket = settings.object_storage_bucket
     asset.storage_key = object_key
     asset.external_url = build_playback_url(settings.object_storage_bucket, object_key)
+    print(f"[media-worker] Updating asset external_url to: {asset.external_url}", flush=True)
 
     return {
         "storage_bucket": settings.object_storage_bucket,
