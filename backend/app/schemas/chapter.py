@@ -17,6 +17,16 @@ class ChapterAssetResponse(BaseModel):
     payload_json: dict[str, Any]
 
 
+class ChapterAssetGenerateRequest(BaseModel):
+    instructions: str | None = None
+
+
+class ChapterAssetGenerateResponse(BaseModel):
+    chapter_id: str
+    estimated_seconds: int
+    asset: ChapterAssetResponse
+
+
 class ChapterResponse(BaseModel):
     chapter_id: str
     class_id: str

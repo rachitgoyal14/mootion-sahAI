@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+import uuid
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.models import Chapter, ChapterAsset, CurriculumPlan, User
 from app.repositories.chapter_repository import (
     create_chapter,
@@ -14,8 +19,27 @@ from app.repositories.chapter_repository import (
 )
 from app.repositories.curriculum_repository import get_curriculum_plan
 from app.repositories.onboarding_repository import get_teacher_class_membership, get_student_class_membership
-from app.schemas.chapter import ChapterAssetResponse, ChapterBootstrapResponse, ChapterListItem, ChapterResponse
+from app.schemas.chapter import (
+    ChapterAssetGenerateRequest,
+    ChapterAssetGenerateResponse,
+    ChapterAssetResponse,
+    ChapterBootstrapResponse,
+    ChapterListItem,
+    ChapterResponse,
+)
+from app.services.assignment_service import _run_manim_generation, _run_model_finder_generation
 from app.services.media_service import resolve_asset_media_url
+from app.services.media_service import store_generated_manim_video
+from app.simulation_engine.pipeline import SimulationPipeline
+from app.core.models import SimulationRecord
+
+
+DIRECT_GENERATION_ASSET_TYPES = {"concept_video", "simulation", "three_d_model"}
+GENERATION_ESTIMATES_SECONDS = {
+    "concept_video": 180,
+    "simulation": 75,
+    "three_d_model": 45,
+}
 
 
 PLACEHOLDER_ASSETS = [
@@ -152,6 +176,194 @@ def _chapter_to_response(db: Session, chapter: Chapter) -> ChapterResponse:
             )
             for asset in assets
         ],
+    )
+
+
+def _asset_to_response(asset: ChapterAsset) -> ChapterAssetResponse:
+    return ChapterAssetResponse(
+        asset_id=str(asset.id),
+        asset_type=asset.asset_type,
+        provider=asset.provider,
+        integration_target=asset.integration_target,
+        title=asset.title,
+        description=asset.description,
+        generation_status=asset.generation_status,
+        external_url=resolve_asset_media_url(asset),
+        payload_json=asset.payload_json,
+    )
+
+
+def _generation_estimate_seconds(asset_type: str) -> int:
+    return GENERATION_ESTIMATES_SECONDS.get(asset_type, 60)
+
+
+def _persist_simulation_result(db: Session, result, prompt: str | None = None) -> None:
+    record = db.query(SimulationRecord).filter(SimulationRecord.simulation_id == result.simulation_id).one_or_none()
+    if record:
+        return
+
+    record = SimulationRecord(
+        simulation_id=result.simulation_id,
+        prompt=prompt,
+        spec_json=json.loads(result.spec.json()) if result.spec else None,
+        html=result.html,
+        validation_json=json.loads(result.validation.json()) if result.validation else None,
+        quality_score=int(result.quality_score * 100),
+        assessments_json=[ap.dict() for ap in result.assessments],
+        phase=result.phase.value,
+        error=result.error,
+        duration_ms=int(result.duration_ms),
+    )
+    db.add(record)
+    db.commit()
+
+
+def _generate_simulation_result(prompt: str):
+    pipeline = SimulationPipeline()
+    return pipeline.run(prompt)
+
+
+def _apply_direct_generation_result(db: Session, asset: ChapterAsset, result: dict | object, prompt: str) -> None:
+    generated_at = datetime.now(timezone.utc)
+
+    if asset.asset_type == "concept_video":
+        video_id = str(result.get("video_id") or "").strip() if isinstance(result, dict) else ""
+        if not video_id:
+            raise RuntimeError("Manim generation did not return a video_id")
+        storage_result = store_generated_manim_video(asset, f"direct-{uuid.uuid4()}", video_id)
+        asset.payload_json = {
+            **asset.payload_json,
+            "placeholder": False,
+            "generated": True,
+            "result": result,
+            "storage": storage_result,
+        }
+        asset.generation_status = "ready"
+        asset.last_generated_at = generated_at
+        return
+
+    if asset.asset_type == "three_d_model":
+        embed_url = ""
+        if isinstance(result, dict):
+            embed_url = str(result.get("embedUrl") or result.get("viewerUrl") or "")
+        asset.external_url = embed_url or None
+        asset.payload_json = {**asset.payload_json, "placeholder": False, "generated": True, "result": result}
+        asset.generation_status = "ready"
+        asset.last_generated_at = generated_at
+        return
+
+    if asset.asset_type == "simulation":
+        simulation_id = getattr(result, "simulation_id", None)
+        if not simulation_id:
+            raise RuntimeError("Simulation generation did not return a simulation_id")
+        _persist_simulation_result(db, result, prompt=prompt)
+        asset.external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{simulation_id}/html"
+        asset.payload_json = {
+            **asset.payload_json,
+            "placeholder": False,
+            "generated": True,
+            "result": {
+                "simulation_id": simulation_id,
+                "phase": getattr(result.phase, "value", None),
+                "quality_score": getattr(result, "quality_score", None),
+                "error": getattr(result, "error", None),
+            },
+        }
+        asset.generation_status = "ready"
+        asset.last_generated_at = generated_at
+        return
+
+    if asset.asset_type == "quiz":
+        questions = result.get("questions", []) if isinstance(result, dict) else []
+        asset.payload_json = {**asset.payload_json, "placeholder": False, "generated": True, "quiz": questions, "result": result}
+        asset.generation_status = "ready"
+        asset.last_generated_at = generated_at
+        return
+
+    raise RuntimeError(f"Unsupported provider: {asset.provider}")
+
+
+def generate_chapter_asset(
+    db: Session,
+    user: User,
+    class_id: str,
+    chapter_id: str,
+    asset_id: str,
+    request: ChapterAssetGenerateRequest,
+) -> ChapterAssetGenerateResponse:
+    _ensure_teacher_has_access(db, user, class_id)
+
+    chapter = get_chapter(db, chapter_id)
+    if not chapter or str(chapter.class_id) != class_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found")
+
+    asset = db.get(ChapterAsset, asset_id)
+    if not asset or str(asset.chapter_id) != chapter_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter asset not found")
+
+    if asset.asset_type not in DIRECT_GENERATION_ASSET_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This asset type cannot be generated from the chapter workspace.")
+
+    if asset.generation_status in {"queued", "processing"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Generation is already in progress for this asset.")
+
+    prompt = (request.instructions or "").strip()
+    generation_prompt = chapter.title
+    payload_json = {
+        **(asset.payload_json or {}),
+        "chapter_id": str(chapter.id),
+        "chapter_title": chapter.title,
+        "asset_type": asset.asset_type,
+        "provider": asset.provider,
+        "integration_target": asset.integration_target,
+        "instructions": prompt,
+        "generation_prompt": generation_prompt,
+        "teacher_notes": prompt,
+    }
+
+    asset.generation_status = "processing"
+    asset.payload_json = {**asset.payload_json, "generation_prompt": generation_prompt, "teacher_notes": prompt, "generation_status": "processing"}
+    db.commit()
+
+    try:
+        if asset.asset_type == "concept_video":
+            result = _run_manim_generation(asset, payload_json)
+        elif asset.asset_type == "three_d_model":
+            result = _run_model_finder_generation(asset, payload_json)
+        elif asset.asset_type == "simulation":
+            sim_prompt = f"Teach me {chapter.title}. {prompt}".strip()
+            result = _generate_simulation_result(sim_prompt)
+        elif asset.asset_type == "quiz":
+            from app.services.assignment_service import _run_quiz_generation
+
+            result = _run_quiz_generation(asset, payload_json)
+        else:
+            raise RuntimeError(f"Unsupported provider: {asset.provider}")
+
+        if asset.asset_type == "three_d_model" and isinstance(result, dict):
+            if result.get("error") or result.get("message") in {"No models found.", "No suitable model found."}:
+                raise RuntimeError(str(result.get("error") or result.get("message") or "No model found."))
+
+        if asset.asset_type == "simulation":
+            if getattr(result, "error", None) or getattr(getattr(result, "phase", None), "value", None) != "completed" or not getattr(result, "html", ""):
+                raise RuntimeError(str(getattr(result, "error", None) or "Simulation generation did not complete successfully."))
+
+        if asset.asset_type == "quiz" and isinstance(result, dict) and result.get("error"):
+            raise RuntimeError(str(result.get("error")))
+
+        _apply_direct_generation_result(db, asset, result, prompt=generation_prompt)
+        db.commit()
+    except Exception as exc:
+        asset.generation_status = "failed"
+        asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    db.refresh(asset)
+    return ChapterAssetGenerateResponse(
+        chapter_id=str(chapter.id),
+        estimated_seconds=_generation_estimate_seconds(asset.asset_type),
+        asset=_asset_to_response(asset),
     )
 
 

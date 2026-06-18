@@ -92,7 +92,7 @@ Use it when the teacher already has a curriculum and wants the backend to turn t
 2. It reads the curriculum root children.
 3. Each top-level child becomes a chapter.
 4. The chapter gets placeholder assets.
-5. Generation is deferred until an assignment is created.
+5. Teachers can generate concept video, simulation, and 3D model assets directly from the chapter workspace.
 
 ### How to use it
 
@@ -130,16 +130,15 @@ It only creates the scaffold.
 
 ## Assignment-Triggered Generation
 
-Real content generation happens when a teacher creates an assignment for a chapter.
+Real content generation now happens in the chapter workspace for the main media assets.
 
 That means:
 
 - bootstrap creates structure
-- assignment creates content demand
-- the Redis queue fills in the content asynchronously
-- rendered videos are stored in private object storage and served back through the backend media URL, which redirects to a signed URL
+- the chapter workspace can generate the concept video, simulation, and 3D model directly
+- generated videos are stored in private object storage and served back through the backend media URL, which redirects to a signed URL
 
-This is deliberate so the system does not generate content before it is needed.
+Assignments still exist for classroom delivery and assessment workflows.
 
 ## Related Endpoints
 

@@ -353,10 +353,13 @@ def get_student_assignment(db: Session, user: User, class_id: str, assignment_id
 
 
 def _run_manim_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
+    topic = payload_json.get("chapter_title") or payload_json.get("generation_prompt") or asset.title
+    notes = str(payload_json.get("teacher_notes") or payload_json.get("instructions") or "").strip()
+    prompt = topic if not notes else f"{topic}. Teacher notes: {notes}"
     response = httpx.post(
         settings.manim_service_url,
         params={
-            "topic": payload_json.get("chapter_title") or asset.title,
+            "topic": prompt,
             "level": "school",
             "persona": "teacher",
             "face_enabled": False,
@@ -368,7 +371,7 @@ def _run_manim_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, 
 
 
 def _run_model_finder_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
-    query = payload_json.get("chapter_title") or asset.title
+    query = payload_json.get("chapter_title") or payload_json.get("generation_prompt") or asset.title
     return find_model(str(query))
 
 
@@ -384,7 +387,7 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
     if status == "ready":
         asset.generation_status = "ready"
         asset.last_generated_at = datetime.now(timezone.utc)
-        asset.payload_json = {**asset.payload_json, "generated": True, "result": result}
+        asset.payload_json = {**asset.payload_json, "placeholder": False, "generated": True, "result": result}
 
         if job.provider == "manim":
             video_id = str(result.get("video_id") or "").strip()
@@ -398,7 +401,12 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
         elif job.provider == "quiz_generator":
             asset.payload_json = {**asset.payload_json, "quiz": result.get("questions", [])}
         elif job.provider == "simulation":
-            asset.external_url = str(result.get("simulation_id") or "") or None
+            simulation_id = str(result.get("simulation_id") or "").strip()
+            asset.external_url = (
+                f"{settings.backend_public_url.rstrip('/')}/simulations/{simulation_id}/html"
+                if simulation_id
+                else None
+            )
     else:
         asset.generation_status = "failed"
         asset.payload_json = {**asset.payload_json, "generated": False, "result": result}
@@ -435,7 +443,7 @@ def _run_quiz_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, o
 def _run_simulation_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
     from app.simulation_engine.pipeline import SimulationPipeline
 
-    topic = payload_json.get("chapter_title") or asset.title
+    topic = payload_json.get("generation_prompt") or payload_json.get("instructions") or payload_json.get("chapter_title") or asset.title
     instructions = payload_json.get("instructions") or ""
     prompt = f"Teach me {topic}. {instructions}".strip()
 
