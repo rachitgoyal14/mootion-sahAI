@@ -147,7 +147,7 @@ export function TeacherDashboardPage() {
   };
 
   return (
-    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative pb-16">
+    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
       
       {/* Mobile Bottom Navigation Bar */}
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-8 py-2.5 flex justify-between items-center z-40 rounded-full shadow-[0_10px_40px_rgba(24,0,173,0.25)] border-[2px] border-[#f6f4ee]">

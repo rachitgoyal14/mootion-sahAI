@@ -160,7 +160,7 @@ export function TeacherClassViewPage() {
   const selectedChapter = chapters.find(ch => ch.chapter_id === selectedChapterId);
 
   return (
-    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative pb-16">
+    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
       
       {/* Mobile Bottom Navigation Bar styled with Montserrat */}
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl font-montserrat">
