@@ -42,6 +42,12 @@ export function TeacherLoginPage() {
         password: password
       });
 
+      if (data.role !== 'teacher') {
+        setError("This account is registered as a student. Please log in via the student portal.");
+        setIsLoading(false);
+        return;
+      }
+
       localStorage.setItem('mootion_access_token', data.access_token);
       localStorage.setItem('mootion_refresh_token', data.refresh_token);
 

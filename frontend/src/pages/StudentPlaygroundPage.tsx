@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import { 
   getStoredTasks, 
   getPlaygroundQuota, 
@@ -56,7 +57,7 @@ interface ChatMessage {
   timestamp: string;
   commandExecuted?: string;
   payload?: {
-    type: 'video' | 'simulation' | 'universe' | 'quiz';
+    type: 'video' | 'simulation' | 'universe' | 'quiz' | 'subject_picker';
     title: string;
     // Specific metadata
     video?: {
@@ -298,6 +299,55 @@ const cleanText = (text: string): string => {
   return cleaned.trim();
 };
 
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64data = reader.result as string;
+      const base64 = base64data.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+const transcribeAudioWithGemini = async (blob: Blob): Promise<string> => {
+  const base64 = await blobToBase64(blob);
+  const apiKey = "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            inlineData: {
+              mimeType: blob.type || 'audio/webm',
+              data: base64
+            }
+          },
+          {
+            text: "Transcribe the spoken audio exactly. Do not add any extra commentary or conversational filler. Output only the transcribed text."
+          }
+        ]
+      }]
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Gemini transcription error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text.trim();
+};
+
 export function StudentPlaygroundPage() {
   const navigate = useNavigate();
 
@@ -322,13 +372,221 @@ export function StudentPlaygroundPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
 
+  // Teacher doubt tab states
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'mootion' | 'teacher'>('mootion');
+  const [joinedClasses, setJoinedClasses] = useState<any[]>([]);
+  const [studentDoubts, setStudentDoubts] = useState<any[]>([]);
+  const [followUpTexts, setFollowUpTexts] = useState<Record<string, string>>({});
+  const [submittingFollowUpIds, setSubmittingFollowUpIds] = useState<Record<string, boolean>>({});
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [newDoubtText, setNewDoubtText] = useState('');
+  const [showSubjectSuggestions, setShowSubjectSuggestions] = useState(false);
+  const [subjectQuery, setSubjectQuery] = useState('');
+  const [isSubmittingDoubt, setIsSubmittingDoubt] = useState(false);
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+
+  // Gemini Speech-to-Text States
+  const [isDoubtRecording, setIsDoubtRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const loadStudentData = async () => {
+    try {
+      const classesData = await api.get('/students/classes');
+      setJoinedClasses(classesData);
+      if (classesData.length > 0 && !selectedClassId) {
+        setSelectedClassId(classesData[0].class_id);
+      }
+      
+      const doubtsData = await api.get('/students/doubts');
+      setStudentDoubts(doubtsData);
+    } catch (err) {
+      console.error("Failed to load student data for doubts:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadStudentData();
+  }, []);
+
+  const handlePlayAudio = (url: string) => {
+    if (playingAudioUrl === url && currentAudio) {
+      currentAudio.pause();
+      setPlayingAudioUrl(null);
+      setCurrentAudio(null);
+    } else {
+      if (currentAudio) {
+        currentAudio.pause();
+      }
+      const audio = new Audio(url);
+      audio.play().catch(e => console.error("Audio playback error:", e));
+      setPlayingAudioUrl(url);
+      setCurrentAudio(audio);
+      audio.onended = () => {
+        setPlayingAudioUrl(null);
+        setCurrentAudio(null);
+      };
+    }
+  };
+
+  const submitDoubtApi = async (classId: string, queryText: string) => {
+    setIsSubmittingDoubt(true);
+    
+    try {
+      // Create the doubt
+      await api.post('/students/doubts', {
+        class_id: classId,
+        query_text: queryText,
+        tried_before: false,
+        attempt_text: null
+      });
+      
+      // Add success message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `msg-mootion-success-${Date.now()}`,
+          sender: 'mootion',
+          text: `📤 **Doubt Dispatched to Teacher!**\n\nYour question has been added directly to your teacher's doubts dashboard.`,
+          timestamp: 'Just now'
+        }
+      ]);
+      
+      // Refresh doubts
+      const doubtsData = await api.get('/students/doubts');
+      setStudentDoubts(doubtsData);
+      
+      // Auto-switch to Teacher tab
+      setActiveWorkspaceTab('teacher');
+      
+      // Set the selected subject selector to the one we just submitted to
+      setSelectedClassId(classId);
+      
+      // Wait for DOM update, then scroll to the bottom of the doubt list or elements
+      setTimeout(() => {
+        const doubtsListEl = document.getElementById('student-doubts-list-container');
+        if (doubtsListEl) {
+          doubtsListEl.scrollTop = doubtsListEl.scrollHeight;
+        }
+      }, 300);
+
+    } catch (err: any) {
+      console.error("Failed to submit student doubt:", err);
+      // Add error message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `msg-mootion-err-${Date.now()}`,
+          sender: 'mootion',
+          text: `❌ **Failed to submit doubt:** ${err.detail || err.message}`,
+          timestamp: 'Just now'
+        }
+      ]);
+    } finally {
+      setIsSubmittingDoubt(false);
+    }
+  };
+
+  const handleCreateDoubtFromTab = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDoubtText.trim() || !selectedClassId) return;
+    
+    setIsSubmittingDoubt(true);
+    try {
+      await api.post('/students/doubts', {
+        class_id: selectedClassId,
+        query_text: newDoubtText.trim(),
+        tried_before: false,
+        attempt_text: null
+      });
+      
+      setNewDoubtText('');
+      
+      // Refresh doubts
+      const doubtsData = await api.get('/students/doubts');
+      setStudentDoubts(doubtsData);
+      
+      // Scroll to bottom of doubts list
+      setTimeout(() => {
+        const doubtsListEl = document.getElementById('student-doubts-list-container');
+        if (doubtsListEl) {
+          doubtsListEl.scrollTop = doubtsListEl.scrollHeight;
+        }
+      }, 200);
+    } catch (err: any) {
+      console.error("Failed to submit student doubt from tab:", err);
+      alert(`Error submitting doubt: ${err.detail || err.message}`);
+    } finally {
+      setIsSubmittingDoubt(false);
+    }
+  };
+
+  const handleResolveDoubt = async (doubtId: string) => {
+    try {
+      const updated = await api.post(`/students/doubts/${doubtId}/resolve`);
+      setStudentDoubts(prev => prev.map(d => d.doubt_id === doubtId ? { ...d, status: updated.status, messages: updated.messages } : d));
+    } catch (err: any) {
+      console.error("Failed to resolve doubt:", err);
+      alert(`Failed to resolve: ${err.detail || err.message}`);
+    }
+  };
+
+  const handleSendFollowUp = async (doubtId: string) => {
+    const text = followUpTexts[doubtId]?.trim();
+    if (!text) return;
+    setSubmittingFollowUpIds(prev => ({ ...prev, [doubtId]: true }));
+    try {
+      const updated = await api.post(`/students/doubts/${doubtId}/reply`, {
+        response_text: text
+      });
+      setFollowUpTexts(prev => ({ ...prev, [doubtId]: '' }));
+      setStudentDoubts(prev => prev.map(d => d.doubt_id === doubtId ? { ...d, status: updated.status, messages: updated.messages } : d));
+    } catch (err: any) {
+      console.error("Failed to send follow up message:", err);
+      alert(`Failed to send message: ${err.detail || err.message}`);
+    } finally {
+      setSubmittingFollowUpIds(prev => ({ ...prev, [doubtId]: false }));
+    }
+  };
+
+  const selectSubject = (subjectName: string) => {
+    const match = textInput.match(/^(\/ask[-_]teacher\s+\/)/i);
+    if (match) {
+      setTextInput(match[1] + subjectName + ' ');
+    }
+    setShowSubjectSuggestions(false);
+    chatInputRef.current?.focus();
+  };
+
+  const renderSubjectPickerCard = (payload: any) => {
+    return (
+      <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-3 font-montserrat">
+        <span className="text-xs font-black uppercase tracking-wider text-[#1800ad] font-montserrat">Target Subject</span>
+        <div className="flex flex-wrap gap-2">
+          {joinedClasses.map((cls) => (
+            <button
+              key={cls.class_id}
+              onClick={() => submitDoubtApi(cls.class_id, payload.queryText)}
+              disabled={isSubmittingDoubt}
+              className="px-4 py-2 bg-[#1800ad] hover:bg-[#1800ad]/90 text-[#f6f4ee] rounded-full text-xs font-black uppercase transition-all tracking-wider font-montserrat flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {cls.subject} ({cls.display_name})
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // Command selections
   const COMMAND_OPTIONS = [
     { cmd: '/video', label: 'Generate educational video storyboard' },
     { cmd: '/simulation', label: 'Create an interactive physics sandbox' },
     { cmd: '/universe', label: 'Explore a 3D orbital interactive system' },
     { cmd: '/quiz', label: 'Attempt unlimited custom concept practices' },
-    { cmd: '/ask_teacher', label: 'Ask a direct question to your teacher' },
+    { cmd: '/ask-teacher', label: 'Ask a direct question to your teacher' },
   ];
 
   // Auto-scroll inside chat
@@ -403,11 +661,31 @@ export function StudentPlaygroundPage() {
     const val = e.target.value;
     setTextInput(val);
 
-    if (val.startsWith('/') && !val.includes(' ')) {
-      setShowCommands(true);
-      setCommandQuery(val.toLowerCase());
+    const isAskTeacherCommand = val.startsWith('/ask-teacher') || val.startsWith('/ask_teacher');
+    if (isAskTeacherCommand) {
+      // Check if it has a slash after the command: e.g. "/ask-teacher /" or "/ask_teacher /"
+      const match = val.match(/^\/ask[-_]teacher\s+\/(.*)$/i);
+      if (match) {
+        setShowSubjectSuggestions(true);
+        setSubjectQuery(match[1].toLowerCase());
+        setShowCommands(false);
+      } else {
+        setShowSubjectSuggestions(false);
+        if (val.startsWith('/') && !val.includes(' ')) {
+          setShowCommands(true);
+          setCommandQuery(val.toLowerCase());
+        } else {
+          setShowCommands(false);
+        }
+      }
     } else {
-      setShowCommands(false);
+      setShowSubjectSuggestions(false);
+      if (val.startsWith('/') && !val.includes(' ')) {
+        setShowCommands(true);
+        setCommandQuery(val.toLowerCase());
+      } else {
+        setShowCommands(false);
+      }
     }
   };
 
@@ -466,91 +744,90 @@ export function StudentPlaygroundPage() {
     const normalizedInput = userInput.toLowerCase();
 
     // Intercept Ask Teacher command
-    const isAskTeacher = normalizedInput.startsWith('/ask_teacher') || normalizedInput.includes('ask_teacher');
+    const isAskTeacher = normalizedInput.startsWith('/ask-teacher') || normalizedInput.startsWith('/ask_teacher') || normalizedInput.includes('ask-teacher') || normalizedInput.includes('ask_teacher');
     if (isAskTeacher) {
-      let queryText = userInput;
-      if (userInput.startsWith('/ask_teacher ')) {
-        queryText = userInput.substring(13).trim();
-      } else if (userInput.includes('ask_teacher')) {
-        queryText = userInput.replace(/ask_teacher/gi, '').replace(/\//g, '').trim();
-      }
-      if (!queryText) {
-        queryText = "Why does water boil at a lower temperature at high altitudes?";
-      }
-
-      const doubtsRaw = localStorage.getItem('mootion_doubts_store');
-      let currentStore: any[] = [];
-      if (doubtsRaw) {
-        try {
-          currentStore = JSON.parse(doubtsRaw);
-        } catch (e) {}
+      let queryText = '';
+      let targetSubjectName = '';
+      
+      let commandPattern = /^\/ask[-_]teacher\s*/i;
+      let cleanedInput = userInput.replace(commandPattern, '').trim();
+      
+      if (cleanedInput.startsWith('/')) {
+        const parts = cleanedInput.substring(1).split(/\s+/);
+        targetSubjectName = parts[0];
+        queryText = parts.slice(1).join(' ').trim();
       } else {
-        currentStore = [
-          {
-            id: "doubt-1",
-            studentName: "Poorvika Patel",
-            grade: "Class 8",
-            subject: "Physics",
-            topicTitle: "Electromagnetic Induction & Flux laws",
-            doubtText: "Why does the current oppose the magnet movement inside Lentz law? Shouldn't it pull it closer?",
-            generatedAnswer: "Lentz law indicates induced current opposes the flux shift to uphold energy conservation. If it pulled closer, it would produce free perpetual velocity energy!",
-            status: "pending",
-            timestamp: "10:15 AM",
-            messages: [
-              { id: "m1", sender: "student", text: "Why does the current oppose the magnet movement inside Lentz law? Shouldn't it pull it closer?", timestamp: "10:15 AM" },
-              { id: "m2", sender: "ai", text: "Lentz law indicates induced current opposes the flux shift to uphold energy conservation. If it pulled closer, it would produce free perpetual velocity energy!", timestamp: "10:16 AM" }
-            ]
-          },
-          {
-            id: "doubt-2",
-            studentName: "Aarav Sharma",
-            grade: "Class 8",
-            subject: "Physics",
-            topicTitle: "Surface Asperities & Friction lock-ups",
-            doubtText: "How do we spot which terminal becomes positive when moving a bar through a circular solenoid?",
-            generatedAnswer: "Apply Faraday's right hand screw indicator. Wrap your fingers towards current flow and your thumb points north.",
-            status: "pending",
-            timestamp: "Yesterday",
-            messages: [
-              { id: "m3", sender: "student", text: "How do we spot which terminal becomes positive when moving a bar through a circular solenoid?", timestamp: "Yesterday" }
-            ]
-          }
-        ];
+        queryText = cleanedInput;
       }
-
-      const newDoubtId = `doubt-live-${Date.now()}`;
-      currentStore.push({
-        id: newDoubtId,
-        studentName: 'Aarav Sharma',
-        grade: 'Class 8',
-        subject: 'Physics',
-        topicTitle: 'Student Playground Inquiry',
-        doubtText: queryText,
-        generatedAnswer: 'Wait for teacher response.',
-        status: 'pending',
-        timestamp: 'Just now',
-        messages: [
-          {
-            id: `msg-inner-1-${Date.now()}`,
-            sender: 'student',
-            text: queryText,
-            timestamp: 'Just now'
-          }
-        ]
-      });
-      localStorage.setItem('mootion_doubts_store', JSON.stringify(currentStore));
-
-      setTimeout(() => {
+      
+      if (!queryText) {
         setMessages(prev => [
           ...prev,
           {
-            id: `msg-ask-receipt-${Date.now()}`,
+            id: `msg-mootion-help-${Date.now()}`,
             sender: 'mootion',
-            text: `📤 **Doubt Dispatched to Teacher!**\n\nYour question: *"${queryText}"* has been added directly to your teacher's doubts dashboard.\n\nWhen your teacher types a reply, their custom response will dynamically sync and output here!`,
+            text: `❌ **Please provide a question.**\nExample: \`/ask-teacher /Science Why is water wet?\` or \`/ask-teacher Why is water wet?\``,
             timestamp: 'Just now'
           }
         ]);
-      }, 700);
+        return;
+      }
+
+      let targetClass: any = null;
+      if (targetSubjectName) {
+        targetClass = joinedClasses.find(c => 
+          c.subject.toLowerCase() === targetSubjectName.toLowerCase() ||
+          c.display_name.toLowerCase() === targetSubjectName.toLowerCase()
+        );
+        
+        if (!targetClass) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `msg-mootion-err-${Date.now()}`,
+              sender: 'mootion',
+              text: `❌ **Subject "${targetSubjectName}" not found.** You are joined in: ${joinedClasses.map(c => `\`${c.subject}\``).join(', ')}.`,
+              timestamp: 'Just now'
+            }
+          ]);
+          return;
+        }
+      }
+
+      if (!targetClass) {
+        if (joinedClasses.length === 1) {
+          targetClass = joinedClasses[0];
+        } else if (joinedClasses.length > 1) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `msg-picker-${Date.now()}`,
+              sender: 'mootion',
+              text: `🤔 You are enrolled in multiple classes. Please select which subject this doubt is for:`,
+              timestamp: 'Just now',
+              payload: {
+                type: 'subject_picker',
+                title: 'Select Subject',
+                queryText: queryText
+              } as any
+            }
+          ]);
+          return;
+        } else {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `msg-mootion-err-${Date.now()}`,
+              sender: 'mootion',
+              text: `❌ **You are not enrolled in any classes.** Please join a class on the home page first.`,
+              timestamp: 'Just now'
+            }
+          ]);
+          return;
+        }
+      }
+
+      submitDoubtApi(targetClass.class_id, queryText);
       return;
     }
 
@@ -755,14 +1032,95 @@ export function StudentPlaygroundPage() {
     }, 600);
   };
 
-  // Simulated Voice triggers
-  const startSpeechSimulation = () => {
-    setIsVoiceRecording(true);
-    // Simulate user completes speech in 2.5 seconds
-    setTimeout(() => {
+  // Speech recording functions using MediaRecorder and Gemini Speech-to-Text
+  const toggleChatVoiceRecording = async () => {
+    if (isVoiceRecording) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
       setIsVoiceRecording(false);
-      setTextInput("Show me buoyancy force simulation");
-    }, 2000);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setIsTranscribing(true);
+          try {
+            const transcription = await transcribeAudioWithGemini(audioBlob);
+            if (transcription) {
+              setTextInput(prev => (prev || '') + ' ' + transcription);
+            }
+          } catch (err) {
+            console.error("Transcription error:", err);
+            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        mediaRecorder.start();
+        setIsVoiceRecording(true);
+      } catch (err) {
+        console.error("Recording failed to start:", err);
+        alert("Failed to access microphone.");
+      }
+    }
+  };
+
+  const toggleDoubtVoiceRecording = async () => {
+    if (isDoubtRecording) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      setIsDoubtRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setIsTranscribing(true);
+          try {
+            const transcription = await transcribeAudioWithGemini(audioBlob);
+            if (transcription) {
+              setNewDoubtText(prev => (prev || '') + ' ' + transcription);
+            }
+          } catch (err) {
+            console.error("Transcription error:", err);
+            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        mediaRecorder.start();
+        setIsDoubtRecording(true);
+      } catch (err) {
+        console.error("Recording failed to start:", err);
+        alert("Failed to access microphone.");
+      }
+    }
   };
 
   const handlePreSessionOpen = (sess: PreSavedSession) => {
@@ -1451,234 +1809,526 @@ export function StudentPlaygroundPage() {
 
         {/* ========================================================
             COLUMN 2 (CENTER): Main Conversational play arena
+           ================        {/* ========================================================
+            COLUMN 2 (CENTER): Main Conversational play arena
            ======================================================== */}
         <section className="flex-1 flex flex-col border-2 border-[#1800ad] rounded-[28px] bg-[#f6f4ee] p-4 h-full overflow-hidden relative justify-between font-montserrat">
           
           {/* Active Header inside Sandbox Compartment wrapper */}
-          <div className="border-b border-[#1800ad]/20 pb-3 flex items-center bg-[#f6f4ee] font-montserrat gap-2">
-            <button 
-              onClick={() => setIsMobileHistoryOpen(!isMobileHistoryOpen)}
-              className="lg:hidden p-1.5 text-[#1800ad] hover:bg-[#1800ad]/10 transition-all flex items-center justify-center mr-1"
-              title="Toggle Sessions History"
-            >
-              <Menu size={14} />
-            </button>
-            <span className="font-black text-xs text-[#1800ad] uppercase tracking-widest font-montserrat">Workspace Feed</span>
-            <span className="text-[8px] bg-[#1800ad]/10 text-[#1800ad] font-bold tracking-widest uppercase py-0.5 px-2 rounded-full border border-[#1800ad]/20 font-montserrat">
-              Live
-            </span>
-          </div>
-
-          {/* Active Homework Alert Banner */}
-          {teacherAssigned && (
-            <div className="bg-[#1800ad]/5 border border-[#1800ad]/20 px-4 py-3 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2 z-25 mt-2.5 text-[#1800ad]">
-              <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-[#1800ad]">
-                <AlertCircle size={16} className="text-[#1800ad]" />
-                <span>Scheduled tasks from your teacher are pending!</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => navigate('/student/tasks')}
-                  className="px-3 py-1 bg-[#1800ad] text-[#f6f4ee] hover:opacity-90 rounded-full font-black text-[9px] uppercase tracking-wider transition-all"
+          <div className="border-b border-[#1800ad]/20 pb-3 flex items-center justify-between bg-[#f6f4ee] font-montserrat">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setIsMobileHistoryOpen(!isMobileHistoryOpen)}
+                className="lg:hidden p-1.5 text-[#1800ad] hover:bg-[#1800ad]/10 transition-all flex items-center justify-center mr-1"
+                title="Toggle Sessions History"
+              >
+                <Menu size={14} />
+              </button>
+              
+              {/* Tab Selector Buttons */}
+              <div className="flex bg-[#1800ad]/5 rounded-full p-1 border border-[#1800ad]/15">
+                <button
+                  type="button"
+                  onClick={() => setActiveWorkspaceTab('mootion')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
+                    activeWorkspaceTab === 'mootion'
+                      ? 'bg-[#1800ad] text-[#f6f4ee] shadow-sm'
+                      : 'text-[#1800ad]/60 hover:text-[#1800ad]'
+                  }`}
                 >
-                  Start
+                  Mootion
                 </button>
-                <button 
-                  onClick={() => { setTeacherAssigned(false); setTeacherAssignedNew(false); }}
-                  className="text-[#1800ad]/50 hover:text-[#1800ad] px-2 py-1 text-[10px] font-bold"
+                <button
+                  type="button"
+                  onClick={() => setActiveWorkspaceTab('teacher')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
+                    activeWorkspaceTab === 'teacher'
+                      ? 'bg-[#1800ad] text-[#f6f4ee] shadow-sm'
+                      : 'text-[#1800ad]/60 hover:text-[#1800ad]'
+                  }`}
                 >
-                  Dismiss
+                  Teacher
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Messages Area */}
-          <div className={`flex-1 overflow-y-auto my-3 pr-1.5 flex flex-col gap-4 custom-scrollbar font-montserrat ${quota >= 10 ? 'justify-center items-center' : ''}`}>
-            
-            {quota >= 10 ? (
-              <div className="flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto bg-[#f6f4ee] border-2 border-[#1800ad] rounded-[32px] shadow-lg gap-4 my-auto font-montserrat">
-                <div>
-                  <h4 className="font-montserrat text-xs font-black uppercase tracking-wider block mb-1">Playground Quota Reached</h4>
-                  <p className="text-xs font-semibold leading-relaxed font-montserrat">
-                    You've explored a lot...... and reached your 10 / 10 limit this week! To keep your curiosity thriving, Playground resets next Monday at 8:00 AM UTC.
-                  </p>
-                </div>
-                <button 
-                  onClick={() => { setQuota(0); setPlaygroundQuota(0); }}
-                  className="px-5 py-2.5 bg-[#1800ad] text-[#f6f4ee] hover:opacity-90 rounded-full font-black text-[10px] uppercase tracking-wider transition-all shadow-md mt-1 font-montserrat"
-                >
-                  Reset Quota
-                </button>
-              </div>
-            ) : (
-              messages.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-[#1800ad]/35 gap-2 my-auto font-montserrat">
-                  <span className="font-montserrat text-xs font-black tracking-widest text-[#1800ad]/55 uppercase text-center block max-w-md">Start a new science exploration below!</span>
-                </div>
-              ) : (
-                messages.map((m, idx) => (
-                  <div key={m.id} className={`flex flex-col gap-1.5 ${m.sender === 'student' ? 'items-end' : 'items-start'}`}>
-                    
-                    <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest opacity-65 font-montserrat text-[#1800ad]">
-                      {m.sender === 'student' ? 'Student Unit' : 'Mootion Engine v1.0'}
-                    </div>
-
-                    <div className={`p-4 rounded-[22px] text-xs sm:text-sm font-semibold max-w-[85%] leading-relaxed ${
-                      m.sender === 'student' 
-                        ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
-                        : 'bg-[#f6f4ee] text-[#1800ad] rounded-tl-none border-2 border-[#1800ad]/30'
-                    }`}>
-                      {m.text === '...' ? (
-                        <span className="flex items-center gap-1 py-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                        </span>
-                      ) : cleanText(m.text)}
-                    </div>
-
-                    {m.payload && (
-                      <div className="w-full max-w-[95%]">
-                        {m.payload.type === 'video' && renderVideoCard(m.payload)}
-                        {m.payload.type === 'simulation' && renderSimulationCard(m.payload)}
-                        {m.payload.type === 'universe' && renderUniverseOrbitalCard(m.payload)}
-                        {m.payload.type === 'quiz' && <InteractiveQuizCard payload={m.payload} />}
-                      </div>
-                    )}
-
-                  </div>
-                ))
-              )
-            )}
-
-            {isVoiceRecording && (
-              <div className="flex flex-col items-end gap-1.5 select-none">
-                <span className="text-[9px] font-black text-[#1800ad]/60 animate-pulse font-montserrat flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad] animate-ping"></span> Live Capturing...
-                </span>
-                <div className="bg-[#1800ad]/15 rounded-2xl px-5 py-4 flex gap-1 items-end h-11 border border-[#1800ad]/15">
-                  {[1, 2, 3, 4, 3, 2, 1, 2, 3, 4, 2, 1].map((h, i) => (
-                    <span key={i} className="w-0.5 bg-[#1800ad] rounded-full animate-bounce" style={{ height: `${h * 5}px`, animationDelay: `${i * 0.08}s` }}></span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
+            <span className="text-[8px] bg-[#1800ad]/10 text-[#1800ad] font-bold tracking-widest uppercase py-1 px-3 rounded-full border border-[#1800ad]/20 font-montserrat">
+              {activeWorkspaceTab === 'mootion' ? 'Interactive AI' : 'Teacher Hub'}
+            </span>
           </div>
 
-          {/* Form input matched to the custom circle style from screenshot */}
-          <div className="pt-3 border-t border-[#1800ad]/20 bg-[#f6f4ee] relative">
-            <input 
-              type="file" 
-              id="playground-file-upload" 
-              className="hidden" 
-              accept="image/*,application/pdf,text/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setMessages(prev => [
-                    ...prev,
-                    {
-                      id: `msg-attach-${Date.now()}`,
-                      sender: 'student',
-                      text: `Attached Worksheet: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
-                      timestamp: 'Just now'
-                    },
-                    {
-                      id: `msg-mootion-reply-${Date.now()}`,
-                      sender: 'mootion',
-                      text: `💡 Perfect! I have attached and analyzed '${file.name}'. You can launch simulations or ask questions about this document!`,
-                      timestamp: 'Just now'
-                    }
-                  ]);
-                }
-              }}
-            />
-
-            <AnimatePresence>
-              {showCommands && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute bottom-full left-1 right-1 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-2xl shadow-2xl overflow-hidden z-30 mb-3 flex flex-col text-xs font-montserrat"
-                >
-                  <div className="px-4 py-2 bg-[#1800ad] border-b border-[#1800ad]/10 font-black uppercase text-[9px] tracking-wider text-[#f6f4ee] font-montserrat">
-                    Sandbox Commands Menu
+          {activeWorkspaceTab === 'mootion' ? (
+            <>
+              {/* Active Homework Alert Banner */}
+              {teacherAssigned && (
+                <div className="bg-[#1800ad]/5 border border-[#1800ad]/20 px-4 py-3 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2 z-25 mt-2.5 text-[#1800ad]">
+                  <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-[#1800ad]">
+                    <AlertCircle size={16} className="text-[#1800ad]" />
+                    <span>Scheduled tasks from your teacher are pending!</span>
                   </div>
-                  {COMMAND_OPTIONS.filter(o => o.cmd.startsWith(commandQuery) || commandQuery === '/').map((opt) => (
-                    <button
-                      key={opt.cmd}
-                      onClick={() => selectCommand(opt.cmd)}
-                      className="px-4 py-3 text-left font-black text-[#1800ad] hover:bg-[#1800ad]/5 border-b border-[#1800ad]/15 transition-colors flex items-center justify-between font-montserrat"
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => navigate('/student/tasks')}
+                      className="px-3 py-1 bg-[#1800ad] text-[#f6f4ee] hover:opacity-90 rounded-full font-black text-[9px] uppercase tracking-wider transition-all"
                     >
-                      <span>{opt.cmd}</span>
-                      <span className="opacity-70 text-[10px] font-montserrat font-semibold text-[#1800ad]/70">{opt.label}</span>
+                      Start
                     </button>
-                  ))}
-
-                  {!textInput.startsWith('/') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowCommands(false);
-                        document.getElementById('playground-file-upload')?.click();
-                      }}
-                      className="px-4 py-3.5 text-left font-black text-[#1800ad] bg-[#f6f4ee] hover:bg-[#1800ad]/5 transition-all flex items-center justify-between font-montserrat border-t border-[#1800ad]/15"
+                    <button 
+                      onClick={() => { setTeacherAssigned(false); setTeacherAssignedNew(false); }}
+                      className="text-[#1800ad]/50 hover:text-[#1800ad] px-2 py-1 text-[10px] font-bold"
                     >
-                      <span>Normal Upload a file</span>
-                      <span className="opacity-70 text-[10px] font-montserrat text-[#1800ad]/70" style={{fontFamily: 'Montserrat'}}>Workspace worksheets or figures</span>
+                      Dismiss
                     </button>
-                  )}
-                </motion.div>
+                  </div>
+                </div>
               )}
-            </AnimatePresence>
 
-            <form onSubmit={handleSendMessage} className="flex gap-3 items-center relative">
-              
-              <div className="relative flex-1 flex items-center bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full px-4 py-3.5 shadow-lg">
-                {/* LHS Plus '+' Button inside the input bubble */}
-                <button 
-                  type="button"
-                  onClick={() => setShowCommands(!showCommands)}
-                  className="p-1 hover:bg-[#1800ad]/10 text-[#1800ad] rounded-full transition-all mr-2"
-                  title="Summon Commands"
-                >
-                  <Plus size={18} />
-                </button>
+              {/* Messages Area */}
+              <div className={`flex-1 overflow-y-auto my-3 pr-1.5 flex flex-col gap-4 custom-scrollbar font-montserrat ${quota >= 10 ? 'justify-center items-center' : ''}`}>
                 
-                <input
-                  ref={chatInputRef}
-                  type="text"
-                  value={textInput}
-                  onChange={handleInputChange}
-                  placeholder="Ask anything..."
-                  className="w-full bg-transparent text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold font-montserrat"
+                {quota >= 10 ? (
+                  <div className="flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto bg-[#f6f4ee] border-2 border-[#1800ad] rounded-[32px] shadow-lg gap-4 my-auto font-montserrat">
+                    <div>
+                      <h4 className="font-montserrat text-xs font-black uppercase tracking-wider block mb-1">Playground Quota Reached</h4>
+                      <p className="text-xs font-semibold leading-relaxed font-montserrat">
+                        You've explored a lot...... and reached your 10 / 10 limit this week! To keep your curiosity thriving, Playground resets next Monday at 8:00 AM UTC.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => { setQuota(0); setPlaygroundQuota(0); }}
+                      className="px-5 py-2.5 bg-[#1800ad] text-[#f6f4ee] hover:opacity-90 rounded-full font-black text-[10px] uppercase tracking-wider transition-all shadow-md mt-1 font-montserrat"
+                    >
+                      Reset Quota
+                    </button>
+                  </div>
+                ) : (
+                  messages.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-[#1800ad]/35 gap-2 my-auto font-montserrat">
+                      <span className="font-montserrat text-xs font-black tracking-widest text-[#1800ad]/55 uppercase text-center block max-w-md">Start a new science exploration below!</span>
+                    </div>
+                  ) : (
+                    messages.map((m, idx) => (
+                      <div key={m.id} className={`flex flex-col gap-1.5 ${m.sender === 'student' ? 'items-end' : 'items-start'}`}>
+                        
+                        <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest opacity-65 font-montserrat text-[#1800ad]">
+                          {m.sender === 'student' ? 'Student Unit' : 'Mootion Engine v1.0'}
+                        </div>
+
+                        <div className={`p-4 rounded-[22px] text-xs sm:text-sm font-semibold max-w-[85%] leading-relaxed ${
+                          m.sender === 'student' 
+                            ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
+                            : 'bg-[#f6f4ee] text-[#1800ad] rounded-tl-none border-2 border-[#1800ad]/30'
+                        }`}>
+                          {m.text === '...' ? (
+                            <span className="flex items-center gap-1 py-0.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                            </span>
+                          ) : cleanText(m.text)}
+                        </div>
+
+                        {m.payload && (
+                          <div className="w-full max-w-[95%]">
+                            {m.payload.type === 'video' && renderVideoCard(m.payload)}
+                            {m.payload.type === 'simulation' && renderSimulationCard(m.payload)}
+                            {m.payload.type === 'universe' && renderUniverseOrbitalCard(m.payload)}
+                            {m.payload.type === 'quiz' && <InteractiveQuizCard payload={m.payload} />}
+                            {m.payload.type === 'subject_picker' && renderSubjectPickerCard(m.payload)}
+                          </div>
+                        )}
+
+                      </div>
+                    ))
+                  )
+                )}
+
+                {isVoiceRecording && (
+                  <div className="flex flex-col items-end gap-1.5 select-none">
+                    <span className="text-[9px] font-black text-[#1800ad]/60 animate-pulse font-montserrat flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad] animate-ping"></span> Live Capturing...
+                    </span>
+                    <div className="bg-[#1800ad]/15 rounded-2xl px-5 py-4 flex gap-1 items-end h-11 border border-[#1800ad]/15">
+                      {[1, 2, 3, 4, 3, 2, 1, 2, 3, 4, 2, 1].map((h, i) => (
+                        <span key={i} className="w-0.5 bg-[#1800ad] rounded-full animate-bounce" style={{ height: `${h * 5}px`, animationDelay: `${i * 0.08}s` }}></span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isTranscribing && (
+                  <div className="flex flex-col items-end gap-1.5 select-none animate-pulse">
+                    <span className="text-[9px] font-black text-amber-600 font-montserrat flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span> Gemini Transcribing...
+                    </span>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Form input matched to the custom circle style from screenshot */}
+              <div className="pt-3 border-t border-[#1800ad]/20 bg-[#f6f4ee] relative">
+                <input 
+                  type="file" 
+                  id="playground-file-upload" 
+                  className="hidden" 
+                  accept="image/*,application/pdf,text/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setMessages(prev => [
+                        ...prev,
+                        {
+                          id: `msg-attach-${Date.now()}`,
+                          sender: 'student',
+                          text: `Attached Worksheet: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+                          timestamp: 'Just now'
+                        },
+                        {
+                          id: `msg-mootion-reply-${Date.now()}`,
+                          sender: 'mootion',
+                          text: `💡 Perfect! I have attached and analyzed '${file.name}'. You can launch simulations or ask questions about this document!`,
+                          timestamp: 'Just now'
+                        }
+                      ]);
+                    }
+                  }}
                 />
 
-                {/* RHS Mic trigger inside input bubble */}
-                <button
-                  type="button"
-                  onClick={startSpeechSimulation}
-                  className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-2 ${isVoiceRecording ? 'text-red-600 animate-pulse' : 'text-[#1800ad]/60 hover:text-[#1800ad]'}`}
-                  title="Speak live concept query"
-                >
-                  <Mic size={18} />
-                </button>
+                <AnimatePresence>
+                  {showCommands && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute bottom-full left-1 right-1 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-2xl shadow-2xl overflow-hidden z-30 mb-3 flex flex-col text-xs font-montserrat"
+                    >
+                      <div className="px-4 py-2 bg-[#1800ad] border-b border-[#1800ad]/10 font-black uppercase text-[9px] tracking-wider text-[#f6f4ee] font-montserrat">
+                        Sandbox Commands Menu
+                      </div>
+                      {COMMAND_OPTIONS.filter(o => o.cmd.startsWith(commandQuery) || commandQuery === '/').map((opt) => (
+                        <button
+                          key={opt.cmd}
+                          onClick={() => selectCommand(opt.cmd)}
+                          className="px-4 py-3 text-left font-black text-[#1800ad] hover:bg-[#1800ad]/5 border-b border-[#1800ad]/15 transition-colors flex items-center justify-between font-montserrat"
+                        >
+                          <span>{opt.cmd}</span>
+                          <span className="opacity-70 text-[10px] font-montserrat font-semibold text-[#1800ad]/70">{opt.label}</span>
+                        </button>
+                      ))}
+
+                      {!textInput.startsWith('/') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCommands(false);
+                            document.getElementById('playground-file-upload')?.click();
+                          }}
+                          className="px-4 py-3.5 text-left font-black text-[#1800ad] bg-[#f6f4ee] hover:bg-[#1800ad]/5 transition-all flex items-center justify-between font-montserrat border-t border-[#1800ad]/15"
+                        >
+                          <span>Normal Upload a file</span>
+                          <span className="opacity-70 text-[10px] font-montserrat text-[#1800ad]/70" style={{fontFamily: 'Montserrat'}}>Workspace worksheets or figures</span>
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                  {showSubjectSuggestions && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute bottom-full left-1 right-1 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-2xl shadow-2xl overflow-hidden z-30 mb-3 flex flex-col text-xs font-montserrat"
+                    >
+                      <div className="px-4 py-2 bg-[#1800ad] border-b border-[#1800ad]/10 font-black uppercase text-[9px] tracking-wider text-[#f6f4ee] font-montserrat">
+                        Select Class/Subject
+                      </div>
+                      {joinedClasses
+                        .filter(c => c.subject.toLowerCase().includes(subjectQuery) || c.display_name.toLowerCase().includes(subjectQuery))
+                        .map((cls) => (
+                          <button
+                            key={cls.class_id}
+                            type="button"
+                            onClick={() => selectSubject(cls.subject)}
+                            className="px-4 py-3 text-left font-black text-[#1800ad] hover:bg-[#1800ad]/5 border-b border-[#1800ad]/15 transition-colors flex items-center justify-between font-montserrat"
+                          >
+                            <span>{cls.subject}</span>
+                            <span className="opacity-70 text-[10px] font-montserrat font-semibold text-[#1800ad]/70">{cls.display_name}</span>
+                          </button>
+                        ))}
+                      {joinedClasses.filter(c => c.subject.toLowerCase().includes(subjectQuery) || c.display_name.toLowerCase().includes(subjectQuery)).length === 0 && (
+                        <div className="px-4 py-3 text-[#1800ad]/50 font-semibold text-center">
+                          No matching classes found
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <form onSubmit={handleSendMessage} className="flex gap-3 items-center relative">
+                  
+                  <div className="relative flex-1 flex items-center bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full px-4 py-3.5 shadow-lg">
+                    {/* LHS Plus '+' Button inside the input bubble */}
+                    <button 
+                      type="button"
+                      onClick={() => setShowCommands(!showCommands)}
+                      className="p-1 hover:bg-[#1800ad]/10 text-[#1800ad] rounded-full transition-all mr-2"
+                      title="Summon Commands"
+                    >
+                      <Plus size={18} />
+                    </button>
+                    
+                    <input
+                      ref={chatInputRef}
+                      type="text"
+                      value={textInput}
+                      onChange={handleInputChange}
+                      placeholder={isTranscribing ? "Transcribing voice using Gemini..." : "Ask anything..."}
+                      disabled={isTranscribing}
+                      className="w-full bg-transparent text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold font-montserrat"
+                    />
+
+                    {/* RHS Mic trigger inside input bubble */}
+                    <button
+                      type="button"
+                      onClick={toggleChatVoiceRecording}
+                      disabled={isTranscribing}
+                      className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-2 shrink-0 ${isVoiceRecording ? 'text-red-650 animate-pulse bg-red-50 border border-red-200' : 'text-[#1800ad]/60 hover:text-[#1800ad]'}`}
+                      title={isVoiceRecording ? "Stop recording" : "Speak live concept query"}
+                    >
+                      <Mic size={18} />
+                    </button>
+                  </div>
+
+                  {/* Outside Send arrow circular button */}
+                  <button 
+                    type="submit" 
+                    disabled={!textInput.trim() && quota >= 10}
+                    className="bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] rounded-full p-4 hover:scale-[1.03] active:scale-95 transition-all outline-none border border-transparent shadow"
+                  >
+                    <Send size={18} />
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Subject selector at the top */}
+              <div className="py-2.5 flex flex-wrap gap-2 border-b border-[#1800ad]/10">
+                {joinedClasses.map((cls) => (
+                  <button
+                    key={cls.class_id}
+                    type="button"
+                    onClick={() => setSelectedClassId(cls.class_id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all border ${
+                      selectedClassId === cls.class_id
+                        ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad]'
+                        : 'bg-transparent text-[#1800ad]/60 border-[#1800ad]/20 hover:bg-[#1800ad]/5 hover:text-[#1800ad]'
+                    }`}
+                  >
+                    {cls.subject} ({cls.display_name})
+                  </button>
+                ))}
               </div>
 
-              {/* Outside Send arrow circular button */}
-              <button 
-                type="submit" 
-                disabled={!textInput.trim() && quota >= 10}
-                className="bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] rounded-full p-4 hover:scale-[1.03] active:scale-95 transition-all outline-none border border-transparent shadow"
+              {/* Doubts List filtered by selectedClassId */}
+              <div 
+                id="student-doubts-list-container"
+                className="flex-1 overflow-y-auto my-3 pr-1.5 flex flex-col gap-3 custom-scrollbar"
               >
-                <Send size={18} />
-              </button>
-            </form>
-          </div>
+                {studentDoubts.filter(d => d.class_id === selectedClassId).length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-[#1800ad]/35 gap-2 my-auto text-center p-6">
+                    <MessageSquare size={36} className="text-[#1800ad]/30" />
+                    <span className="font-montserrat text-xs font-black tracking-widest text-[#1800ad]/55 uppercase block">
+                      No doubts yet for this subject. Ask one below.
+                    </span>
+                  </div>
+                ) : (
+                  studentDoubts
+                    .filter(d => d.class_id === selectedClassId)
+                    .map((doubt) => {
+                      const isResolved = doubt.status.toLowerCase() === 'resolved';
+                      const hasReply = !!doubt.response_text || doubt.status.toLowerCase() === 'responded';
+                      return (
+                        <div 
+                          key={doubt.doubt_id}
+                          className="p-4 rounded-[22px] bg-white border-2 border-[#1800ad]/15 text-left flex flex-col gap-2 relative overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-[#1800ad]/55">
+                              Doubt ID: {doubt.doubt_id.substring(0, 8)}
+                            </span>
+                            <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                              doubt.status.toLowerCase() === 'resolved'
+                                ? 'bg-emerald-100 border-emerald-250 text-emerald-800'
+                                : doubt.status.toLowerCase() === 'responded'
+                                ? 'bg-blue-100 border-blue-250 text-blue-800'
+                                : 'bg-red-100 border-red-250 text-red-800'
+                            }`}>
+                              {doubt.status.toLowerCase() === 'resolved' ? 'Resolved' : doubt.status.toLowerCase() === 'responded' ? 'Responded' : 'Pending'}
+                            </span>
+                          </div>
+                          
+                          <p className="text-xs sm:text-sm font-semibold text-[#1800ad] leading-relaxed">
+                            {doubt.query_text}
+                          </p>
+                          
+                          {/* Messages History */}
+                          {doubt.messages && doubt.messages.length > 0 ? (
+                            <div className="mt-3 p-3 bg-[#1800ad]/5 border border-[#1800ad]/10 rounded-xl flex flex-col gap-3 max-h-[200px] overflow-y-auto custom-scrollbar">
+                              {doubt.messages.map((msg: any, mIdx: number) => {
+                                const isMe = msg.sender === 'student';
+                                return (
+                                  <div 
+                                    key={msg.id || mIdx}
+                                    className={`flex flex-col gap-0.5 max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start'}`}
+                                  >
+                                    <span className="text-[7px] font-black uppercase tracking-wider text-[#1800ad]/50">
+                                      {isMe ? 'You' : 'Teacher'}
+                                    </span>
+                                    <div className={`p-2 rounded-xl text-xs font-semibold leading-normal ${
+                                      isMe
+                                        ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none'
+                                        : 'bg-[#f6f4ee] text-[#1800ad] border border-[#1800ad]/15 rounded-tl-none'
+                                    }`}>
+                                      {msg.text}
+                                    </div>
+                                    {!isMe && msg.audio_url && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePlayAudio(msg.audio_url)}
+                                        className="mt-0.5 flex items-center gap-1 self-start px-2 py-0.5 bg-[#1800ad] text-[#f6f4ee] rounded-full text-[8px] font-black uppercase tracking-wider"
+                                      >
+                                        Play Voice Note
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            /* Fallback to legacy single response reply box */
+                            hasReply && doubt.response_text && (
+                              <div className="mt-2 p-3 bg-[#1800ad]/10 border border-[#1800ad]/20 rounded-xl flex flex-col gap-1.5">
+                                <span className="text-[8px] font-black uppercase tracking-wider text-[#1800ad]/60">Teacher's Reply:</span>
+                                <p className="text-xs font-semibold text-[#1800ad] leading-relaxed">
+                                  {doubt.response_text}
+                                </p>
+                                
+                                {doubt.response_audio_url && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePlayAudio(doubt.response_audio_url)}
+                                    className="mt-1 flex items-center gap-1.5 self-start px-3 py-1.5 bg-[#1800ad] text-[#f6f4ee] rounded-full text-[9px] font-black uppercase tracking-wider transition-all hover:scale-[1.03] active:scale-95"
+                                  >
+                                    <Play size={10} className="fill-current" />
+                                    {playingAudioUrl === doubt.response_audio_url ? 'Pause Audio' : 'Play Voice Note'}
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          )}
+                          
+                          {/* Resolve and Reply controls */}
+                          {!isResolved && (
+                            <div className="mt-2 flex flex-col gap-2 pt-2 border-t border-[#1800ad]/10">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveDoubt(doubt.doubt_id)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-[#f6f4ee] rounded-full text-[9px] font-black uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-sm"
+                                >
+                                  Mark as Resolved
+                                </button>
+                              </div>
+                              
+                              {/* Reply Form */}
+                              <form 
+                                onSubmit={(e) => { e.preventDefault(); handleSendFollowUp(doubt.doubt_id); }}
+                                className="flex gap-2 items-center mt-1"
+                              >
+                                <input
+                                  type="text"
+                                  placeholder="Type reply to teacher..."
+                                  value={followUpTexts[doubt.doubt_id] || ''}
+                                  onChange={(e) => setFollowUpTexts(prev => ({ ...prev, [doubt.doubt_id]: e.target.value }))}
+                                  disabled={submittingFollowUpIds[doubt.doubt_id]}
+                                  className="flex-1 bg-[#f6f4ee] text-[#1800ad] placeholder:text-[#1800ad]/40 border border-[#1800ad]/30 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-semibold"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={submittingFollowUpIds[doubt.doubt_id] || !(followUpTexts[doubt.doubt_id] || '').trim()}
+                                  className="bg-[#1800ad] hover:opacity-90 text-[#f6f4ee] rounded-xl px-3 py-1.5 text-[9px] font-black uppercase tracking-wider disabled:opacity-40"
+                                >
+                                  {submittingFollowUpIds[doubt.doubt_id] ? 'Sending...' : 'Send'}
+                                </button>
+                              </form>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+
+              {/* Bottom Send doubt text input */}
+              <div className="pt-3 border-t border-[#1800ad]/20 bg-[#f6f4ee] flex flex-col gap-1.5">
+                {isDoubtRecording && (
+                  <div className="text-[9px] text-red-600 font-bold animate-pulse px-4 select-none flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping"></span> Recording audio... Click mic again to transcribe.
+                  </div>
+                )}
+                {isTranscribing && (
+                  <div className="text-[9px] text-amber-600 font-bold animate-pulse px-4 select-none flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span> Gemini is transcribing voice...
+                  </div>
+                )}
+                <form 
+                  onSubmit={handleCreateDoubtFromTab}
+                  className="flex gap-3 items-center"
+                >
+                  <div className="flex-1 flex items-center bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full px-4 py-2.5">
+                    <input
+                      type="text"
+                      value={newDoubtText}
+                      onChange={(e) => setNewDoubtText(e.target.value)}
+                      placeholder={
+                        isTranscribing
+                          ? "Transcribing voice using Gemini..."
+                          : selectedClassId 
+                            ? `Ask a doubt for ${joinedClasses.find(c => c.class_id === selectedClassId)?.subject || 'selected subject'}...`
+                            : "Select a subject first..."
+                      }
+                      disabled={!selectedClassId || isSubmittingDoubt || isTranscribing}
+                      className="w-full bg-transparent text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold"
+                    />
+                    {selectedClassId && (
+                      <button
+                        type="button"
+                        onClick={toggleDoubtVoiceRecording}
+                        disabled={isSubmittingDoubt || isTranscribing}
+                        className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-2 shrink-0 ${isDoubtRecording ? 'text-red-600 animate-pulse bg-red-50 border border-red-250' : 'text-[#1800ad]/60 hover:text-[#1800ad]'}`}
+                        title={isDoubtRecording ? "Stop recording" : "Record voice query"}
+                      >
+                        <Mic size={18} />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    disabled={!newDoubtText.trim() || !selectedClassId || isSubmittingDoubt || isTranscribing || isDoubtRecording}
+                    className="bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] rounded-full p-3.5 hover:scale-[1.03] active:scale-95 transition-all outline-none border border-transparent shadow disabled:opacity-40 shrink-0"
+                  >
+                    <Send size={16} />
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
 
         </section>
 

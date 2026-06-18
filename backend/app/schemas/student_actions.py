@@ -28,6 +28,7 @@ class StudentDoubtResponse(BaseModel):
     doubt_id: str
     student_id: str
     student_name: str
+    class_id: str
     topic: str
     query_text: str
     tried_before: bool
@@ -36,12 +37,17 @@ class StudentDoubtResponse(BaseModel):
     status: str
     response_text: str | None
     response_audio_url: str | None
+    messages: list[dict] | None = None
     created_at: str
 
 
 class TeacherDoubtRespondRequest(BaseModel):
     response_text: str
     voice_note_file_url: str | None = None
+
+
+class StudentDoubtReplyRequest(BaseModel):
+    response_text: str
 
 
 class QuotaResponse(BaseModel):

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, 
@@ -23,206 +24,340 @@ import {
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 
-interface LiveMessage {
-  id: string;
-  sender: 'student' | 'teacher' | 'ai';
-  text: string;
-  timestamp: string;
-}
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64data = reader.result as string;
+      const base64 = base64data.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
-interface Doubt {
-  id: string;
-  studentName: string;
-  grade: string;
-  subject: string;
-  topicTitle: string;
-  doubtText: string;
-  generatedAnswer?: string;
-  status: 'pending' | 'responded';
-  timestamp: string;
-  messages: LiveMessage[];
-}
-
-const DEFAULT_MOCK_DOUBTS: Doubt[] = [
-  {
-    id: "doubt-1",
-    studentName: "Poorvika Patel",
-    grade: "Class 8",
-    subject: "Physics",
-    topicTitle: "Electromagnetic Induction & Flux laws",
-    doubtText: "Why does the current oppose the magnet movement inside Lentz law? Shouldn't it pull it closer?",
-    generatedAnswer: "Lentz law indicates induced current opposes the flux shift to uphold energy conservation. If it pulled closer, it would produce free perpetual velocity energy!",
-    status: "pending",
-    timestamp: "10:15 AM",
-    messages: [
-      { id: "m1", sender: "student", text: "Why does the current oppose the magnet movement inside Lentz law? Shouldn't it pull it closer?", timestamp: "10:15 AM" },
-      { id: "m2", sender: "ai", text: "💡 Proposed AI Solution: Lentz law indicates induced current opposes the flux shift to uphold energy conservation. If it pulled closer, it would produce free perpetual velocity energy!", timestamp: "10:16 AM" }
-    ]
-  },
-  {
-    id: "doubt-2",
-    studentName: "Aarav Sharma",
-    grade: "Class 8",
-    subject: "Physics",
-    topicTitle: "Surface Asperities & Friction lock-ups",
-    doubtText: "How do we spot which terminal becomes positive when moving a bar through a circular solenoid?",
-    generatedAnswer: "Apply Faraday's right hand screw indicator. Wrap your fingers towards current flow and your thumb points north.",
-    status: "pending",
-    timestamp: "Yesterday",
-    messages: [
-      { id: "m3", sender: "student", text: "How do we spot which terminal becomes positive when moving a bar through a circular solenoid?", timestamp: "Yesterday" }
-    ]
-  },
-  {
-    id: "doubt-3",
-    studentName: "Dev Patel",
-    grade: "Class 8",
-    subject: "Chemistry",
-    topicTitle: "Atomic Structures & Valency",
-    doubtText: "If surfaces weld together under high pressure, why doesn't glue stick better on oily materials?",
-    generatedAnswer: "Oil molecules establish a visual barrier preventing outer direct contact welding. The asperities slide over the oil film lubricant fluid.",
-    status: "responded",
-    timestamp: "2 days ago",
-    messages: [
-      { id: "m4", sender: "student", text: "If surfaces weld together under high pressure, why doesn't glue stick better on oily materials?", timestamp: "2 days ago" },
-      { id: "m5", sender: "teacher", text: "Oil molecules establish a low-surface-energy boundary layer, preventing adhesive chains from forming covalent bonds with the backing base materials.", timestamp: "Yesterday" }
-    ]
+const transcribeAudioWithGemini = async (blob: Blob): Promise<string> => {
+  const base64 = await blobToBase64(blob);
+  const apiKey = "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            inlineData: {
+              mimeType: blob.type || 'audio/webm',
+              data: base64
+            }
+          },
+          {
+            text: "Transcribe the spoken audio exactly. Do not add any extra commentary or conversational filler. Output only the transcribed text."
+          }
+        ]
+      }]
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Gemini transcription error: ${response.statusText}`);
   }
-];
-
-const cleanText = (text: string): string => {
-  if (!text) return "";
-  // Strip emojis (using Unicode Extended Pictographic and basic emoji ranges)
-  let cleaned = text.replace(/\p{Extended_Pictographic}/gu, '');
-  cleaned = cleaned.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu, '');
-  // Strip asterisks
-  cleaned = cleaned.replace(/\*/g, '');
-  return cleaned.trim();
+  
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return text.trim();
 };
 
 export function TeacherDoubtsPage() {
   const navigate = useNavigate();
-  const [doubts, setDoubts] = useState<Doubt[]>([]);
-  const [selectedDoubtId, setSelectedDoubtId] = useState<string>('');
-  const [typedReply, setTypedReply] = useState<string>('');
   
-  // Voice recording mock state
-  const [recordingDoubtId, setRecordingDoubtId] = useState<string | null>(null);
+  // Real API doubt and class states
+  const [classes, setClasses] = useState<any[]>([]);
+  const [doubts, setDoubts] = useState<any[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<string>('all'); // 'all' or class_id
+  const [selectedDoubtId, setSelectedDoubtId] = useState<string | null>(null);
+  const [responseInputs, setResponseInputs] = useState<Record<string, string>>({});
+  const [submittingIds, setSubmittingIds] = useState<Record<string, boolean>>({});
+  
+  // AI Suggestions & Speech-to-Text States
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [typingState, setTypingState] = useState<string>('');
+  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   
-  // Mobile list drawer toggle state
+  // Mobile filter list toggle
   const [isMobileListOpen, setIsMobileListOpen] = useState<boolean>(false);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // New doubt ids for pulse animation highlight
+  const [newDoubtIds, setNewDoubtIds] = useState<Set<string>>(new Set());
 
-  // Sync index and fetch from storage
-  useEffect(() => {
-    const fetchDoubts = () => {
-      const raw = localStorage.getItem('mootion_doubts_store');
-      if (raw) {
+  // Audio Playback States
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+
+  const fetchAllDoubts = async (classList: any[]) => {
+    try {
+      const allFetchedDoubts: any[] = [];
+      for (const cls of classList) {
         try {
-          const parsed = JSON.parse(raw);
-          setDoubts(parsed);
-          // Set first doubt if none selected
-          if (parsed.length > 0 && !selectedDoubtId) {
-            setSelectedDoubtId(parsed[0].id);
-          }
-        } catch (e) {
-          console.error("Failed to parse doubts store", e);
+          const classDoubts = await api.get(`/teachers/classes/${cls.class_id}/doubts`);
+          classDoubts.forEach((d: any) => {
+            d.subjectLabel = `${cls.grade} - ${cls.subject}`;
+          });
+          allFetchedDoubts.push(...classDoubts);
+        } catch (err) {
+          console.error(`Failed to fetch doubts for class ${cls.class_id}:`, err);
         }
-      } else {
-        localStorage.setItem('mootion_doubts_store', JSON.stringify(DEFAULT_MOCK_DOUBTS));
-        setDoubts(DEFAULT_MOCK_DOUBTS);
-        setSelectedDoubtId(DEFAULT_MOCK_DOUBTS[0].id);
+      }
+      
+      allFetchedDoubts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      setDoubts(prevDoubts => {
+        if (prevDoubts.length > 0) {
+          const prevIds = new Set(prevDoubts.map(d => d.doubt_id));
+          const currentIds = allFetchedDoubts.map(d => d.doubt_id);
+          const newlyArrived = currentIds.filter(id => !prevIds.has(id));
+          
+          if (newlyArrived.length > 0) {
+            setNewDoubtIds(new Set(newlyArrived));
+            setTimeout(() => {
+              setNewDoubtIds(new Set());
+            }, 5000);
+          }
+        }
+        return allFetchedDoubts;
+      });
+    } catch (err) {
+      console.error("Failed to fetch doubts for classes:", err);
+    }
+  };
+
+  useEffect(() => {
+    let intervalId: any;
+    
+    const loadInitialData = async () => {
+      try {
+        const classesData = await api.get('/teachers/classes');
+        setClasses(classesData);
+        await fetchAllDoubts(classesData);
+        
+        const poll = () => {
+          if (document.visibilityState === 'visible') {
+            fetchAllDoubts(classesData);
+          }
+        };
+        
+        intervalId = setInterval(poll, 30000);
+        
+        const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            poll();
+          }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        
+        return () => {
+          clearInterval(intervalId);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+      } catch (err) {
+        console.error("Failed to load classes or doubts:", err);
       }
     };
+    
+    loadInitialData();
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
-    fetchDoubts();
-    // Poll to keep bidirectional communication and ask_teacher synced in real time
-    const interval = setInterval(fetchDoubts, 2000);
-    return () => clearInterval(interval);
-  }, [selectedDoubtId]);
+  const handleRespondDirectly = async (doubtId: string, text: string) => {
+    setSubmittingIds(prev => ({ ...prev, [doubtId]: true }));
+    try {
+      const updatedDoubt = await api.post(`/teachers/doubts/${doubtId}/respond`, {
+        response_text: text
+      });
+      
+      setDoubts(prevDoubts => 
+        prevDoubts.map(d => d.doubt_id === doubtId ? { 
+          ...d, 
+          status: updatedDoubt.status, 
+          response_text: updatedDoubt.response_text,
+          messages: updatedDoubt.messages
+        } : d)
+      );
+      
+      setResponseInputs(prev => ({ ...prev, [doubtId]: '' }));
+    } catch (err: any) {
+      console.error("Failed to respond to doubt directly:", err);
+      alert(`Failed to respond: ${err.detail || err.message}`);
+    } finally {
+      setSubmittingIds(prev => ({ ...prev, [doubtId]: false }));
+    }
+  };
 
-  // Auto-scroll inside active chat window
+  const handleResolveDoubt = async (doubtId: string) => {
+    setSubmittingIds(prev => ({ ...prev, [doubtId]: true }));
+    try {
+      const updatedDoubt = await api.post(`/teachers/doubts/${doubtId}/resolve`);
+      setDoubts(prevDoubts => 
+        prevDoubts.map(d => d.doubt_id === doubtId ? { 
+          ...d, 
+          status: updatedDoubt.status,
+          messages: updatedDoubt.messages
+        } : d)
+      );
+    } catch (err: any) {
+      console.error("Failed to resolve doubt:", err);
+      alert(`Failed to resolve: ${err.detail || err.message}`);
+    } finally {
+      setSubmittingIds(prev => ({ ...prev, [doubtId]: false }));
+    }
+  };
+
+  const handlePlayAudio = (url: string) => {
+    if (playingAudioUrl === url && currentAudio) {
+      currentAudio.pause();
+      setPlayingAudioUrl(null);
+      setCurrentAudio(null);
+    } else {
+      if (currentAudio) {
+        currentAudio.pause();
+      }
+      const audio = new Audio(url);
+      audio.play().catch(e => console.error("Audio playback error:", e));
+      setPlayingAudioUrl(url);
+      setCurrentAudio(audio);
+      audio.onended = () => {
+        setPlayingAudioUrl(null);
+        setCurrentAudio(null);
+      };
+    }
+  };
+
+  const handleRespond = async (doubtId: string) => {
+    const text = responseInputs[doubtId]?.trim();
+    if (!text) return;
+    await handleRespondDirectly(doubtId, text);
+  };
+
+  const toggleRecording = async (doubtId: string) => {
+    if (isRecording) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setIsTranscribing(true);
+          try {
+            const transcription = await transcribeAudioWithGemini(audioBlob);
+            if (transcription) {
+              setResponseInputs(prev => ({
+                ...prev,
+                [doubtId]: (prev[doubtId] || '') + ' ' + transcription
+              }));
+            }
+          } catch (err) {
+            console.error("Transcription error:", err);
+            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+          } finally {
+            setIsTranscribing(false);
+          }
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error("Recording failed to start:", err);
+        alert("Failed to access microphone.");
+      }
+    }
+  };
+
+  const generateAIReplies = async (queryText: string) => {
+    setIsGeneratingSuggestions(true);
+    setAiSuggestions([]);
+    try {
+      const apiKey = "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      
+      const prompt = `You are an expert teaching assistant helping a teacher respond to a student's doubt.
+Student's question: "${queryText}"
+
+Generate 3 diverse, polite, and helpful short reply suggestions (1-2 sentences each). 
+Provide the response as a valid JSON array of strings, like this:
+["suggestion 1", "suggestion 2", "suggestion 3"]
+
+Do not output any markdown formatting, backticks, or comments. Output only the raw JSON array.`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      
+      if (!response.ok) throw new Error("Gemini suggestions error");
+      const data = await response.json();
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        setAiSuggestions(parsed);
+      }
+    } catch (err) {
+      console.error("Failed to generate AI replies:", err);
+      setAiSuggestions([
+        "That's a great question! Let's look at the formula and verify it step-by-step.",
+        "Could you check your calculations again? Let me know where you get stuck.",
+        "Let's discuss this in detail in the next class!"
+      ]);
+    } finally {
+      setIsGeneratingSuggestions(false);
+    }
+  };
+
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (selectedDoubtId) {
+      const selectedDoubt = doubts.find(d => d.doubt_id === selectedDoubtId);
+      if (selectedDoubt) {
+        const isResolved = selectedDoubt.status.toLowerCase() === 'resolved' || selectedDoubt.status.toLowerCase() === 'responded';
+        if (!isResolved) {
+          generateAIReplies(selectedDoubt.query_text);
+        } else {
+          setAiSuggestions([]);
+        }
+      }
+    } else {
+      setAiSuggestions([]);
+    }
   }, [selectedDoubtId, doubts]);
 
-  const activeDoubt = doubts.find(d => d.id === selectedDoubtId) || doubts[0];
-
-  const handleSendReply = (customText?: string) => {
-    const textToSend = customText || typedReply;
-    if (!textToSend.trim() || !activeDoubt) return;
-
-    const newMessage: LiveMessage = {
-      id: `m-teacher-${Date.now()}`,
-      sender: 'teacher',
-      text: textToSend.trim(),
-      timestamp: 'Just now'
-    };
-
-    const updatedDoubts = doubts.map(d => {
-      if (d.id === activeDoubt.id) {
-        const msgs = d.messages || [];
-        return {
-          ...d,
-          status: 'responded' as const,
-          messages: [...msgs, newMessage]
-        };
-      }
-      return d;
-    });
-
-    setDoubts(updatedDoubts);
-    localStorage.setItem('mootion_doubts_store', JSON.stringify(updatedDoubts));
-    setTypedReply('');
-
-    // Trigger mock user response after 1.5 seconds to build a dynamic conversation thread!
-    setTypingState(`${activeDoubt.studentName} is writing...`);
-    setTimeout(() => {
-      const studentReplyText = `Thanks for clarifying, teacher! Does this specific principle apply inside liquid buoyancy parameters too?`;
-      const studentMsgs: LiveMessage = {
-        id: `m-student-reply-${Date.now()}`,
-        sender: 'student',
-        text: studentReplyText,
-        timestamp: 'Just now'
-      };
-
-      const finalDoubts = updatedDoubts.map(d => {
-        if (d.id === activeDoubt.id) {
-          const msgs = d.messages || [];
-          return {
-            ...d,
-            messages: [...msgs, studentMsgs]
-          };
-        }
-        return d;
-      });
-
-      setDoubts(finalDoubts);
-      localStorage.setItem('mootion_doubts_store', JSON.stringify(finalDoubts));
-      setTypingState('');
-    }, 2000);
-  };
-
-  const handleApproveAIResponse = () => {
-    if (!activeDoubt || !activeDoubt.generatedAnswer) return;
-    const cleanAnswer = activeDoubt.generatedAnswer.replace(/💡 Proposed AI Solution: /gi, '');
-    handleSendReply(`Approved Guidance: ${cleanAnswer}`);
-  };
-
-  const handleStartRecord = () => {
-    if (!activeDoubt) return;
-    setRecordingDoubtId(activeDoubt.id);
-    setIsRecording(true);
-  };
-
-  const handleStopRecord = () => {
-    setIsRecording(false);
-    setRecordingDoubtId(null);
-    handleSendReply("🎙 Sent complete voice note explanation (0:15 min)");
-  };
+  const displayedDoubts = doubts.filter(d => selectedFilter === 'all' || d.class_id === selectedFilter);
 
   return (
     <div className="flex flex-1 w-full h-[100dvh] bg-[#1800ad] font-montserrat text-[#1800ad] overflow-hidden relative">
@@ -230,8 +365,8 @@ export function TeacherDoubtsPage() {
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl">
         <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
-        <NavItem icon={<BookOpen size={24} />} onClick={() => navigate('/teacher/class/class-8-physics')} />
-        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
+        <NavItem icon={<BookOpen size={24} />} onClick={() => navigate('/teacher/home')} />
+        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/home')} />
         <NavItem icon={<MessageSquare size={24} />} active onClick={() => navigate('/teacher/doubts')} />
       </nav>
 
@@ -242,8 +377,8 @@ export function TeacherDoubtsPage() {
         </div>
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
-          <NavItem icon={<BookOpen size={24} />} onClick={() => navigate('/teacher/class/class-8-physics')} />
-          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
+          <NavItem icon={<BookOpen size={24} />} onClick={() => navigate('/teacher/home')} />
+          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/home')} />
           <NavItem icon={<MessageSquare size={24} />} active onClick={() => navigate('/teacher/doubts')} />
         </nav>
         <div onClick={() => navigate('/')} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
@@ -257,376 +392,356 @@ export function TeacherDoubtsPage() {
           
           {/* Header Element */}
           <header className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-3 border-b-2 border-[#1800ad]/15 pb-4 mb-6">
-            <div>
-              <span className="text-xs font-black uppercase tracking-widest text-[#1800ad]/60 font-mono">Live Doubt Resolution Center</span>
-              <h1 className="text-2xl md:text-3xl font-black text-[#1800ad] tracking-tight mt-1">
-                Direct Teacher-Student Chat
-              </h1>
+            <div className="flex items-center justify-between w-full lg:w-auto">
+              <div>
+                <span className="text-xs font-black uppercase tracking-widest text-[#1800ad]/60 font-mono">Live Doubt Resolution Center</span>
+                <h1 className="text-2xl md:text-3xl font-black text-[#1800ad] tracking-tight mt-1">
+                  Direct Teacher-Student Chat
+                </h1>
+              </div>
             </div>
             <p className="text-xs font-semibold text-[#1800ad]/70 leading-none">
               Respond directly to curriculum doubts or prompt automated replies. Live synced with student playgrounds!
             </p>
           </header>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[330px_1fr] gap-6 flex-1 h-[calc(100%-80px)] overflow-hidden">
+          <div className="flex flex-1 gap-6 h-[calc(100%-80px)] overflow-hidden relative">
             
-            {/* LHS: Live Doubts List Selector - Desktop only */}
-            <div className="hidden lg:flex flex-col gap-3 h-full overflow-y-auto pr-1">
-              <div className="flex flex-col gap-2.5">
-                {doubts.map((item) => {
-                  const isSelected = selectedDoubtId === item.id;
-                  const isPending = item.status === 'pending';
-                  const lastMessage = item.messages?.[item.messages.length - 1];
+            {/* Left List (Fixed width on desktop, full width on mobile) */}
+            <div className={`flex flex-col h-full overflow-hidden w-full md:w-[300px] lg:w-[350px] shrink-0 ${selectedDoubtId ? 'hidden md:flex' : 'flex'}`}>
+              
+              {/* Class/Subject Filter List at the top */}
+              <div className="flex gap-2 overflow-x-auto pb-3 mb-3 border-b border-[#1800ad]/15 select-none shrink-0 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setSelectedFilter('all')}
+                  className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border shrink-0 ${
+                    selectedFilter === 'all'
+                      ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad]'
+                      : 'bg-white text-[#1800ad] border-[#1800ad]/20 hover:bg-[#1800ad]/5'
+                  }`}
+                >
+                  All ({doubts.filter(d => d.status.toLowerCase() !== 'resolved' && d.status.toLowerCase() !== 'responded').length})
+                </button>
+                {classes.map((cls) => {
+                  const pendingCount = doubts.filter(d => d.class_id === cls.class_id && d.status.toLowerCase() !== 'resolved' && d.status.toLowerCase() !== 'responded').length;
+                  const isClassSelected = selectedFilter === cls.class_id;
 
                   return (
                     <button
-                      key={item.id}
-                      onClick={() => setSelectedDoubtId(item.id)}
-                      className={`text-left p-4.5 rounded-2xl border-2 transition-all flex flex-col gap-2 relative overflow-hidden ${
-                        isSelected 
-                          ? 'border-[#1800ad] bg-white shadow-md' 
-                          : 'border-[#1800ad]/10 hover:border-[#1800ad]/30 bg-[#f6f4ee]'
+                      key={cls.class_id}
+                      type="button"
+                      onClick={() => setSelectedFilter(cls.class_id)}
+                      className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border shrink-0 ${
+                        isClassSelected
+                          ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad]'
+                          : 'bg-white text-[#1800ad] border-[#1800ad]/20 hover:bg-[#1800ad]/5'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[8px] font-black uppercase tracking-widest bg-[#1800ad]/5 text-[#1800ad] px-2.5 py-0.5 rounded-full border border-[#1800ad]/10">
-                          {item.grade} • {item.subject}
-                        </span>
-                        {isPending && (
-                          <span className="text-[8px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase">Pending</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#1800ad]/10 text-[#1800ad] flex items-center justify-center font-bold text-[10px]">
-                          {item.studentName.charAt(0)}
-                        </div>
-                        <h3 className="font-extrabold text-xs">
-                          {item.studentName}
-                        </h3>
-                      </div>
-
-                      <p className="text-[11px] font-semibold text-[#1800ad]/70 line-clamp-2">
-                        {lastMessage ? lastMessage.text : item.doubtText}
-                      </p>
-
-                      <div className="flex items-center justify-between border-t border-[#1800ad]/10 pt-2 mt-1 text-[8.5px] font-black uppercase tracking-wider text-[#1800ad]/50">
-                        <span>Topic: {item.topicTitle}</span>
-                        <span>{item.timestamp}</span>
-                      </div>
+                      {cls.subject} {pendingCount > 0 ? `(${pendingCount})` : ''}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* RHS: LIVE CONVERSATION CHAT SCREEN - visible on all sizes */}
-            {activeDoubt ? (
-              <div className="bg-white rounded-[28px] border-2 border-[#1800ad] flex flex-col h-full overflow-hidden shadow">
-                
-                {/* Chat Header */}
-                <div className="px-4 sm:px-5 py-3 border-b border-[#1800ad]/15 bg-[#1800ad]/5 flex flex-col gap-2">
-                  
-                  {/* Mobile Student Toggle Row - scrollable pill switcher */}
-                  <div className="flex lg:hidden items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                    {doubts.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setSelectedDoubtId(item.id)}
-                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide transition-all border ${
-                          selectedDoubtId === item.id
-                            ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad]'
-                            : 'bg-white text-[#1800ad] border-[#1800ad]/20 hover:border-[#1800ad]/60'
+              {/* Doubts scroll list */}
+              <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 custom-scrollbar">
+                {displayedDoubts.length === 0 ? (
+                  <div className="bg-white rounded-2xl border-2 border-[#1800ad]/15 flex items-center justify-center p-8 text-center text-[#1800ad]/35 h-full flex-col font-montserrat">
+                    <MessageSquare size={32} className="mx-auto mb-2" />
+                    <span className="font-extrabold uppercase text-[10px] tracking-widest text-[#1800ad]/60">No doubts found</span>
+                  </div>
+                ) : (
+                  displayedDoubts.map((doubt) => {
+                    const isResolved = doubt.status.toLowerCase() === 'resolved' || doubt.status.toLowerCase() === 'responded';
+                    const isNew = newDoubtIds.has(doubt.doubt_id);
+                    const isSelected = selectedDoubtId === doubt.doubt_id;
+
+                    return (
+                      <motion.button
+                        key={doubt.doubt_id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={isNew ? {
+                          opacity: 1,
+                          y: 0,
+                          backgroundColor: ["#ffffff", "#ffe4e6", "#ffffff"],
+                          scale: [1, 1.01, 1],
+                          transition: { repeat: 2, duration: 1.2 }
+                        } : { opacity: 1, y: 0 }}
+                        onClick={() => setSelectedDoubtId(doubt.doubt_id)}
+                        className={`w-full text-left p-4 rounded-2xl border-2 transition-all flex flex-col gap-2 relative overflow-hidden shadow-sm ${
+                          isSelected
+                            ? 'border-[#1800ad] bg-[#1800ad]/5 font-bold shadow-md'
+                            : 'border-[#1800ad]/10 bg-white hover:border-[#1800ad]/30'
                         }`}
                       >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${
-                          item.status === 'pending' ? 'bg-red-500' : 'bg-emerald-500'
-                        }`}></span>
-                        {item.studentName.split(' ')[0]}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Name and class badge row */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-black text-[#1800ad] font-montserrat">{activeDoubt.studentName}</h3>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[8px] sm:text-[10px] font-black uppercase bg-[#1800ad] text-[#f6f4ee] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full">{activeDoubt.grade} • {activeDoubt.subject}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Message Streams List */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3.5 custom-scrollbar bg-[#f6f4ee]/30">
-                  {/* First Question Message from student */}
-                  <div className="flex flex-col items-start max-w-[85%] self-start gap-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#1800ad]/50 pl-1">{activeDoubt.studentName} • original doubt</span>
-                    <div className="p-4 rounded-2xl rounded-tl-none bg-[#f6f4ee] border border-[#1800ad]/10 text-xs font-semibold leading-relaxed text-[#1800ad]">
-                      "{cleanText(activeDoubt.doubtText)}"
-                    </div>
-                  </div>
-
-                  {/* AI Suggested Answer if present (as a proposed card) */}
-                  {activeDoubt.generatedAnswer && (
-                    <div className="flex flex-col items-start max-w-[85%] self-start gap-1">
-                      <span className="text-[9.5px] font-bold text-indigo-600 block pl-1 uppercase">AI Suggested Guidance</span>
-                      <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl rounded-tl-none text-xs leading-relaxed text-indigo-900 font-semibold">
-                        {cleanText(activeDoubt.generatedAnswer)}
-                      </div>
-
-                      {activeDoubt.status === 'pending' && (
-                        <button
-                          onClick={handleApproveAIResponse}
-                          className="mt-1.5 ml-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-[9px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5"
-                        >
-                          <Check size={10} className="stroke-[3]" /> Approve & Send AI answer
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Dynamically mapped replies thread */}
-                  {activeDoubt.messages && activeDoubt.messages.filter(m => m.id !== 'm1' && m.id !== 'm2').map((msg) => {
-                    const isTeacher = msg.sender === 'teacher';
-                    return (
-                      <div 
-                        key={msg.id}
-                        className={`flex flex-col max-w-[85%] gap-1 ${isTeacher ? 'self-end items-end' : 'self-start items-start'}`}
-                      >
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-[#1800ad]/50 px-1">
-                          {isTeacher ? 'You (Teacher)' : activeDoubt.studentName}
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-black text-[#1800ad] truncate max-w-[170px]">
+                            {doubt.student_name}
+                          </span>
+                          <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                            doubt.status.toLowerCase() === 'resolved'
+                              ? 'bg-emerald-50 border-emerald-250 text-emerald-800'
+                              : doubt.status.toLowerCase() === 'responded'
+                              ? 'bg-blue-50 border-blue-250 text-blue-800'
+                              : 'bg-red-50 border-red-250 text-red-800'
+                          }`}>
+                            {doubt.status.toLowerCase() === 'resolved' ? 'Resolved' : doubt.status.toLowerCase() === 'responded' ? 'Responded' : 'Pending'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#1800ad]/75 truncate font-semibold">
+                          {doubt.query_text}
+                        </p>
+                        <span className="text-[9px] font-bold text-[#1800ad]/50 uppercase tracking-wide">
+                          {doubt.subjectLabel}
                         </span>
-                        
-                        <div className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold leading-relaxed ${
-                          isTeacher 
-                            ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
-                            : 'bg-white text-[#1800ad] border border-[#1800ad]/15 rounded-tl-none'
-                        }`}>
-                          {cleanText(msg.text)}
-                        </div>
-                      </div>
+                      </motion.button>
                     );
-                  })}
-
-                  {/* Typing Simulator indicator */}
-                  {typingState && (
-                    <div className="text-[10px] font-semibold text-[#1800ad]/60 italic animate-pulse pl-1 self-start flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/60 animate-ping"></span>
-                      {typingState}
-                    </div>
-                  )}
-
-                  <div ref={chatEndRef} />
-                </div>
-
-                {/* Input Text Area Toolbar / Control */}
-                <div className="p-4 border-t border-[#1800ad]/15 bg-white relative">
-                  <div className="flex gap-2.5 items-center relative">
-                    
-                    <div className="relative flex-1 flex items-center bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full px-4 py-3 shadow-sm">
-                      {/* mic record trigger */}
-                      {isRecording ? (
-                        <button
-                          type="button"
-                          onClick={handleStopRecord}
-                          className="mr-2 text-red-600 animate-pulse flex items-center gap-1 font-mono text-[9px] font-black uppercase tracking-wider"
-                        >
-                          <Square size={13} className="fill-red-600 animate-ping" /> STOP
-                        </button>
-                      ) : (
-                        <button 
-                          type="button"
-                          onClick={handleStartRecord}
-                          className="p-1 hover:bg-[#1800ad]/10 text-[#1800ad]/60 hover:text-[#1800ad] rounded-full transition-all mr-2"
-                          title="Record voice explanation"
-                        >
-                          <Mic size={16} />
-                        </button>
-                      )}
-                      
-                      <input
-                        type="text"
-                        value={typedReply}
-                        onChange={(e) => setTypedReply(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleSendReply();
-                          }
-                        }}
-                        placeholder={`Reply to ${activeDoubt.studentName}...`}
-                        className="w-full bg-transparent text-xs text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold font-montserrat"
-                      />
-                    </div>
-
-                    <button 
-                      onClick={() => handleSendReply()}
-                      disabled={!typedReply.trim()}
-                      className="bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] rounded-full p-3.5 hover:scale-[1.03] active:scale-95 transition-all outline-none border border-transparent shadow disabled:opacity-40 disabled:scale-100"
-                    >
-                      <Send size={16} />
-                    </button>
-
-                  </div>
-                </div>
-
-              </div>
-            ) : (
-              <div className="bg-white rounded-[28px] border-2 border-[#1800ad]/15 flex items-center justify-center p-8 sm:p-12 text-center text-[#1800ad]/35 h-full flex-col">
-                <div className="flex flex-col gap-2 max-w-sm">
-                  <MessageSquare size={42} className="mx-auto" />
-                  <span className="font-extrabold uppercase text-xs font-montserrat tracking-widest text-[#1800ad]/60">No Active Doubt Selected</span>
-                  <p className="text-xs font-semibold leading-relaxed">Select a student doubt from the list to resolve and chat back in real-time!</p>
-                </div>
-                
-                {doubts.length > 0 && (
-                  <div className="mt-6 flex flex-col gap-2 w-full max-w-xs">
-                    {doubts.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setSelectedDoubtId(item.id)}
-                        className="flex items-center gap-3 p-3 rounded-xl border border-[#1800ad]/15 bg-[#f6f4ee] hover:bg-[#1800ad]/5 transition-all text-left"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-[#1800ad] text-[#f6f4ee] flex items-center justify-center font-black text-sm shrink-0">
-                          {item.studentName.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-extrabold text-xs text-[#1800ad] truncate">{item.studentName}</p>
-                          <p className="text-[10px] text-[#1800ad]/60 truncate">{item.doubtText}</p>
-                        </div>
-                        <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase ${
-                          item.status === 'pending' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-                        }`}>{item.status}</span>
-                      </button>
-                    ))}
-                  </div>
+                  })
                 )}
               </div>
-            )}
+
+            </div>
+
+            {/* RHS: Right Panel (Detail / Response panel) */}
+            <div className={`flex-1 flex flex-col h-full overflow-hidden bg-white rounded-[28px] border-2 border-[#1800ad]/15 p-5 relative ${selectedDoubtId ? 'flex' : 'hidden md:flex'}`}>
+              {!selectedDoubtId ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center text-[#1800ad]/35 p-8">
+                  <MessageSquare size={42} className="text-[#1800ad]/20 mb-3" />
+                  <span className="font-black text-xs uppercase tracking-widest text-[#1800ad]/60 mb-1">
+                    Select a Doubt
+                  </span>
+                  <p className="text-xs font-semibold max-w-xs leading-relaxed">
+                    Choose a doubt card from the left panel to review attempt details and respond.
+                  </p>
+                </div>
+              ) : (() => {
+                const selectedDoubt = doubts.find(d => d.doubt_id === selectedDoubtId);
+                if (!selectedDoubt) return null;
+                const isResolved = selectedDoubt.status.toLowerCase() === 'resolved';
+                
+                return (
+                  <div className="flex-1 flex flex-col h-full justify-between">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-[#1800ad]/10 pb-4 mb-4 select-none">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDoubtId(null)}
+                          className="md:hidden p-2 bg-[#1800ad]/5 hover:bg-[#1800ad]/10 text-[#1800ad] rounded-full transition-all mr-1.5 flex items-center justify-center border border-[#1800ad]/10"
+                          title="Back to doubts list"
+                        >
+                          <ArrowLeft size={14} />
+                        </button>
+                        <div className="w-9 h-9 rounded-full bg-[#1800ad]/10 text-[#1800ad] flex items-center justify-center font-black text-xs">
+                          {selectedDoubt.student_name.charAt(0)}
+                        </div>
+                        <div>
+                          <h2 className="font-black text-xs sm:text-sm text-[#1800ad] leading-tight">{selectedDoubt.student_name}</h2>
+                          <span className="text-[9px] font-bold text-[#1800ad]/60 uppercase tracking-wide leading-none block mt-0.5 font-montserrat">
+                            {selectedDoubt.subjectLabel}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[8px] font-bold text-[#1800ad]/50">
+                            {new Date(selectedDoubt.created_at).toLocaleString()}
+                          </span>
+                          <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                            selectedDoubt.status.toLowerCase() === 'resolved'
+                              ? 'bg-emerald-100 border-emerald-250 text-emerald-800'
+                              : selectedDoubt.status.toLowerCase() === 'responded'
+                              ? 'bg-blue-100 border-blue-250 text-blue-800'
+                              : 'bg-red-100 border-red-250 text-red-800'
+                          }`}>
+                            {selectedDoubt.status.toLowerCase() === 'resolved' ? 'Resolved' : selectedDoubt.status.toLowerCase() === 'responded' ? 'Responded' : 'Pending'}
+                          </span>
+                        </div>
+                        {selectedDoubt.status.toLowerCase() !== 'resolved' && (
+                          <button
+                            type="button"
+                            onClick={() => handleResolveDoubt(selectedDoubt.doubt_id)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-[#f6f4ee] rounded-full text-[9px] font-black uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-sm"
+                          >
+                            Resolve
+                          </button>
+                        )}
+                      </div>
+                    </div>
+ 
+                    {/* Question Content */}
+                    <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-4 mb-4 custom-scrollbar text-left">
+                      
+                      {/* Tried Before Section (Attempt Info) */}
+                      {selectedDoubt.tried_before && (
+                        <div className="flex flex-col gap-1.5 max-w-[90%] self-start select-none">
+                          <span className="text-[8px] font-black uppercase tracking-wider text-amber-850 select-none">
+                            Student's Attempt details:
+                          </span>
+                          <div className="p-4 bg-amber-50/50 text-amber-900 border border-amber-250 rounded-[22px] rounded-tl-none text-xs font-semibold italic leading-relaxed">
+                            "{selectedDoubt.attempt_text || 'No details provided.'}"
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Chat Messages Log */}
+                      {selectedDoubt.messages && selectedDoubt.messages.length > 0 ? (
+                        <div className="flex flex-col gap-4">
+                          {selectedDoubt.messages.map((msg: any, mIdx: number) => {
+                            const isMe = msg.sender === 'teacher';
+                            return (
+                              <div 
+                                key={msg.id || mIdx} 
+                                className={`flex flex-col gap-1 max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start'}`}
+                              >
+                                <span className="text-[8px] font-black uppercase tracking-wider text-[#1800ad]/55 select-none">
+                                  {isMe ? 'You (Teacher)' : selectedDoubt.student_name}
+                                </span>
+                                <div className={`p-4 rounded-[22px] text-xs sm:text-sm font-semibold leading-relaxed ${
+                                  isMe 
+                                    ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
+                                    : 'bg-[#f6f4ee] text-[#1800ad] border border-[#1800ad]/15 rounded-tl-none'
+                                }`}>
+                                  {msg.text}
+                                </div>
+                                {isMe && msg.audio_url && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePlayAudio(msg.audio_url)}
+                                    className="mt-1 flex items-center gap-1.5 self-end px-3 py-1 bg-[#1800ad] text-[#f6f4ee] rounded-full text-[9px] font-black uppercase tracking-wider transition-all hover:scale-[1.03] active:scale-95"
+                                  >
+                                    Play Voice Note
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Fallback Question Bubble if messages list not loaded */}
+                          <div className="flex flex-col gap-1.5 max-w-[90%] self-start">
+                            <span className="text-[8px] font-black uppercase tracking-wider text-[#1800ad]/55 select-none">
+                              Student's Question:
+                            </span>
+                            <div className="p-4 bg-[#f6f4ee] text-[#1800ad] border border-[#1800ad]/15 rounded-[22px] rounded-tl-none text-xs sm:text-sm font-semibold leading-relaxed">
+                              {selectedDoubt.query_text}
+                            </div>
+                          </div>
+                          {selectedDoubt.response_text && (
+                            <div className="flex flex-col gap-1.5 max-w-[90%] self-end items-end">
+                              <span className="text-[8px] font-black uppercase tracking-wider text-[#1800ad]/55 select-none">
+                                Your Reply:
+                              </span>
+                              <div className="p-4 bg-[#1800ad] text-[#f6f4ee] rounded-[22px] rounded-tr-none text-xs sm:text-sm font-semibold leading-relaxed">
+                                {selectedDoubt.response_text}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Input Reply Area */}
+                    {!isResolved && (
+                      <div className="pt-4 border-t border-[#1800ad]/10 flex flex-col gap-3.5 shrink-0">
+                        
+                        {/* AI Suggestions */}
+                        <div className="flex flex-col gap-2 select-none">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-[#1800ad]/60 flex items-center gap-1.5">
+                            <Sparkles size={11} className="text-amber-600 fill-current" /> Suggested Replies (Gemini):
+                          </span>
+                          {isGeneratingSuggestions ? (
+                            <div className="flex items-center gap-1 text-[10px] text-[#1800ad]/50 italic">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                              <span>Formulating replies...</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2 max-h-[85px] overflow-y-auto custom-scrollbar">
+                              {aiSuggestions.map((suggestion, sIdx) => (
+                                <button
+                                  key={sIdx}
+                                  type="button"
+                                  onClick={() => setResponseInputs(prev => ({ ...prev, [selectedDoubt.doubt_id]: suggestion }))}
+                                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-left text-[10px] font-semibold leading-normal transition-all max-w-full hover:scale-[1.01]"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Textarea container with Mic button */}
+                        <div className="relative">
+                          <textarea
+                            value={responseInputs[selectedDoubt.doubt_id] || ''}
+                            onChange={(e) => setResponseInputs(prev => ({ ...prev, [selectedDoubt.doubt_id]: e.target.value }))}
+                            placeholder={isTranscribing ? "Transcribing voice using Gemini..." : `Type or record reply to ${selectedDoubt.student_name}...`}
+                            disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing}
+                            className="w-full min-h-[90px] p-4 pr-12 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-2xl text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold resize-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleRecording(selectedDoubt.doubt_id)}
+                            disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing}
+                            className={`absolute right-3.5 bottom-3.5 p-2 rounded-full transition-all border ${
+                              isRecording 
+                                ? 'text-white bg-red-600 border-red-700 animate-pulse' 
+                                : 'text-[#1800ad]/60 border-transparent hover:bg-[#1800ad]/10'
+                            }`}
+                            title={isRecording ? "Stop recording" : "Record voice response"}
+                          >
+                            <Mic size={16} />
+                          </button>
+                        </div>
+
+                        {isTranscribing && (
+                          <div className="text-[10px] text-amber-700 font-semibold italic flex items-center gap-1.5 animate-pulse select-none">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span> Gemini is transcribing your spoken voice...
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleRespondDirectly(selectedDoubt.doubt_id, "Resolved.")}
+                            disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing || isRecording}
+                            className="px-4 py-2.5 bg-white border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all active:scale-95 disabled:opacity-40"
+                          >
+                            Mark Resolved
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRespond(selectedDoubt.doubt_id)}
+                            disabled={!responseInputs[selectedDoubt.doubt_id]?.trim() || submittingIds[selectedDoubt.doubt_id] || isTranscribing || isRecording}
+                            className="px-5 py-2.5 bg-[#1800ad] text-[#f6f4ee] hover:opacity-95 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-40"
+                          >
+                            {submittingIds[selectedDoubt.doubt_id] ? (
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <>
+                                <Send size={12} /> Send
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                );
+              })()}
+            </div>
 
           </div>
 
         </div>
       </main>
-
-      {/* MOBILE LIST SLIDE DOWN / SHEET DRAWER */}
-      <AnimatePresence>
-        {isMobileListOpen && (
-          <>
-            {/* Dark blur overlay backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMobileListOpen(false)}
-              className="fixed inset-0 bg-[#1800ad]/60 backdrop-blur-xs z-50 lg:hidden"
-            />
-
-            {/* Slide-out Sheet */}
-            <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 26, stiffness: 220 }}
-              className="fixed top-0 bottom-0 left-0 w-full max-w-[315px] bg-[#f6f4ee] border-r-4 border-[#1800ad] p-6 z-50 flex flex-col justify-between h-full shadow-2xl lg:hidden font-montserrat text-[#1800ad]"
-            >
-              <div className="flex flex-col h-full overflow-hidden">
-                
-                {/* Drawer Header with Title and Close button */}
-                <div className="flex items-center justify-between border-b-2 border-[#1800ad]/15 pb-4 mb-4">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare size={16} className="text-[#1800ad]" />
-                    <span className="font-black text-xs uppercase tracking-wider font-montserrat">
-                      Student Inquiries
-                    </span>
-                    <span className="bg-[#1800ad] text-[#f6f4ee] rounded-full px-1.5 py-0.5 text-[8px] font-black leading-none">
-                      {doubts.length}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => setIsMobileListOpen(false)}
-                    className="p-1 rounded-full hover:bg-[#1800ad]/15 text-[#1800ad] transition-all"
-                  >
-                    <X size={20} className="stroke-[2.5]" />
-                  </button>
-                </div>
-
-                {/* Subtitle brief */}
-                <span className="text-[9px] font-black uppercase text-[#1800ad]/50 tracking-wider mb-3">Live Active Queue:</span>
-
-                {/* Student Doubt List Selection Cards */}
-                <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 custom-scrollbar h-full">
-                  {doubts.length === 0 ? (
-                    <div className="py-20 text-center text-[11px] font-semibold text-[#1800ad]/50 uppercase tracking-widest">
-                      No doubts found
-                    </div>
-                  ) : (
-                    doubts.map((item) => {
-                      const isSelected = selectedDoubtId === item.id;
-                      const isPending = item.status === 'pending';
-                      const lastMessage = item.messages?.[item.messages.length - 1];
-
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            setSelectedDoubtId(item.id);
-                            setIsMobileListOpen(false);
-                          }}
-                          className={`text-left p-4 rounded-xl border border-[#1800ad]/20 transition-all flex flex-col gap-2 relative overflow-hidden ${
-                            isSelected 
-                              ? 'border-2 border-[#1800ad] bg-white shadow-md' 
-                              : 'bg-white/40 hover:bg-white/80'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[8px] font-black uppercase tracking-widest bg-[#1800ad]/5 text-[#1800ad] px-2 py-0.5 rounded border border-[#1800ad]/10">
-                              {item.grade} • {item.subject}
-                            </span>
-                            {isPending && (
-                              <span className="text-[8px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Pending</span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-full bg-[#1800ad]/10 text-[#1800ad] flex items-center justify-center font-bold text-[9px]">
-                              {item.studentName.charAt(0)}
-                            </div>
-                            <h3 className="font-extrabold text-xs">
-                              {item.studentName}
-                            </h3>
-                          </div>
-
-                          <p className="text-[10px] font-semibold text-[#1800ad]/70 line-clamp-2 leading-relaxed">
-                            {lastMessage ? lastMessage.text : item.doubtText}
-                          </p>
-
-                          <div className="flex items-center justify-between border-t border-[#1800ad]/10 pt-1.5 mt-1 text-[8px] uppercase tracking-wider text-[#1800ad]/40 font-black">
-                            <span className="truncate max-w-[130px]">Topic: {item.topicTitle}</span>
-                            <span>{item.timestamp}</span>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-              </div>
-
-              {/* Bottom dismissal */}
-              <div className="mt-4 pt-3 border-t border-[#1800ad]/10">
-                <button
-                  onClick={() => setIsMobileListOpen(false)}
-                  className="w-full bg-[#1800ad] hover:opacity-90 text-[#f6f4ee] py-3 rounded-xl font-black uppercase text-[9px] tracking-wider transition-all"
-                >
-                  Close Inquiries
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
     </div>
   );

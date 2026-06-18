@@ -30,6 +30,7 @@ from app.services.student_actions_service import (
     get_student_analytics_drill,
     list_class_doubts,
     respond_to_doubt,
+    resolve_teacher_doubt,
 )
 
 router = APIRouter(prefix="/teachers", tags=["teachers"])
@@ -130,4 +131,13 @@ def teacher_respond_doubt(
         response_text=request.response_text,
         voice_note_file_url=request.voice_note_file_url,
     )
+
+
+@router.post("/doubts/{doubt_id}/resolve", response_model=StudentDoubtResponse)
+def teacher_resolve_student_doubt(
+    doubt_id: str,
+    user=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    return resolve_teacher_doubt(db, user, doubt_id)
 

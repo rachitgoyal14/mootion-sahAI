@@ -373,9 +373,10 @@ class StudentDoubt(Base):
     tried_before = Column(Boolean, nullable=False, default=False)
     attempt_text = Column(Text, nullable=True)
     clarification_video_url = Column(String(500), nullable=True)
-    status = Column(String(20), nullable=False, default="pending")  # "pending", "resolved"
+    status = Column(String(20), nullable=False, default="pending")  # "pending", "resolved", "responded"
     response_text = Column(Text, nullable=True)
     response_audio_url = Column(String(500), nullable=True)
+    messages = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

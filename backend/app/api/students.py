@@ -17,12 +17,16 @@ from app.schemas.student_actions import (
     QuotaResponse,
     PlaygroundGenerateRequest,
     PlaygroundGenerateResponse,
+    StudentDoubtReplyRequest,
 )
 from app.services.onboarding_service import join_student_class, list_student_classes, set_student_language
 from app.services.student_actions_service import (
     submit_student_doubt,
     get_or_create_quota,
     generate_playground_item,
+    list_student_doubts,
+    resolve_student_doubt,
+    student_reply_to_doubt,
 )
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -103,4 +107,32 @@ def generate_playground(
         topic=request.topic,
         asset_type=request.asset_type,
     )
+
+
+@router.get("/doubts", response_model=list[StudentDoubtResponse])
+def get_student_doubts(
+    user=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    return list_student_doubts(db, str(user.id))
+
+
+@router.post("/doubts/{doubt_id}/resolve", response_model=StudentDoubtResponse)
+def student_resolve_doubt(
+    doubt_id: str,
+    user=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    return resolve_student_doubt(db, str(user.id), doubt_id)
+
+
+@router.post("/doubts/{doubt_id}/reply", response_model=StudentDoubtResponse)
+def student_reply_doubt(
+    doubt_id: str,
+    request: StudentDoubtReplyRequest,
+    user=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    return student_reply_to_doubt(db, user, doubt_id, request.response_text)
+
 

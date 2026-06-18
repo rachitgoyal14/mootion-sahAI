@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from datetime import datetime, timezone
 import httpx
 from fastapi import HTTPException, status
@@ -219,9 +220,6 @@ def submit_student_doubt(
     if not membership:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Student is not a member of this class.")
 
-    # Check and consume quota
-    check_and_use_doubt_quota(db, str(student.id))
-
     # Identify Topic via LLM
     topic = "Science Concept"
     try:
@@ -234,6 +232,15 @@ def submit_student_doubt(
     # Start/Get Clarification Video
     clarification_video = _generate_clarification_video(query_text)
 
+    initial_messages = [
+        {
+            "id": f"msg-init-{int(uuid.uuid4().time_low)}",
+            "sender": "student",
+            "text": query_text,
+            "timestamp": "Just now"
+        }
+    ]
+
     doubt = StudentDoubt(
         student_id=student.id,
         class_id=class_id,
@@ -243,6 +250,7 @@ def submit_student_doubt(
         attempt_text=attempt_text,
         clarification_video_url=clarification_video,
         status="pending",
+        messages=initial_messages,
     )
     db.add(doubt)
     db.commit()
@@ -252,6 +260,7 @@ def submit_student_doubt(
         doubt_id=str(doubt.id),
         student_id=str(doubt.student_id),
         student_name=student.full_name,
+        class_id=str(doubt.class_id),
         topic=doubt.topic,
         query_text=doubt.query_text,
         tried_before=doubt.tried_before,
@@ -260,6 +269,7 @@ def submit_student_doubt(
         status=doubt.status,
         response_text=doubt.response_text,
         response_audio_url=doubt.response_audio_url,
+        messages=doubt.messages,
         created_at=doubt.created_at.isoformat(),
     )
 
@@ -275,6 +285,7 @@ def list_class_doubts(db: Session, class_id: str) -> list[StudentDoubtResponse]:
                 doubt_id=str(d.id),
                 student_id=str(d.student_id),
                 student_name=student_name,
+                class_id=str(d.class_id),
                 topic=d.topic,
                 query_text=d.query_text,
                 tried_before=d.tried_before,
@@ -283,10 +294,70 @@ def list_class_doubts(db: Session, class_id: str) -> list[StudentDoubtResponse]:
                 status=d.status,
                 response_text=d.response_text,
                 response_audio_url=d.response_audio_url,
+                messages=d.messages,
                 created_at=d.created_at.isoformat(),
             )
         )
     return results
+
+
+def list_student_doubts(db: Session, student_id: str) -> list[StudentDoubtResponse]:
+    doubts = db.query(StudentDoubt).filter(StudentDoubt.student_id == student_id).order_by(StudentDoubt.created_at.desc()).all()
+    results = []
+    for d in doubts:
+        student = db.query(User).filter(User.id == d.student_id).first()
+        student_name = student.full_name if student else "Anonymous Student"
+        results.append(
+            StudentDoubtResponse(
+                doubt_id=str(d.id),
+                student_id=str(d.student_id),
+                student_name=student_name,
+                class_id=str(d.class_id),
+                topic=d.topic,
+                query_text=d.query_text,
+                tried_before=d.tried_before,
+                attempt_text=d.attempt_text,
+                clarification_video_url=d.clarification_video_url,
+                status=d.status,
+                response_text=d.response_text,
+                response_audio_url=d.response_audio_url,
+                messages=d.messages,
+                created_at=d.created_at.isoformat(),
+            )
+        )
+    return results
+
+
+def resolve_student_doubt(db: Session, student_id: str, doubt_id: str) -> StudentDoubtResponse:
+    doubt = db.query(StudentDoubt).filter(StudentDoubt.id == doubt_id).first()
+    if not doubt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doubt not found.")
+    if str(doubt.student_id) != student_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only resolve your own doubts.")
+    
+    doubt.status = "resolved"
+    db.commit()
+    db.refresh(doubt)
+    
+    student = db.query(User).filter(User.id == doubt.student_id).first()
+    student_name = student.full_name if student else "Anonymous Student"
+    
+    return StudentDoubtResponse(
+        doubt_id=str(doubt.id),
+        student_id=str(doubt.student_id),
+        student_name=student_name,
+        class_id=str(doubt.class_id),
+        topic=doubt.topic,
+        query_text=doubt.query_text,
+        tried_before=doubt.tried_before,
+        attempt_text=doubt.attempt_text,
+        clarification_video_url=doubt.clarification_video_url,
+        status=doubt.status,
+        response_text=doubt.response_text,
+        response_audio_url=doubt.response_audio_url,
+        messages=doubt.messages,
+        created_at=doubt.created_at.isoformat(),
+    )
 
 
 def respond_to_doubt(
@@ -308,9 +379,22 @@ def respond_to_doubt(
     if not membership:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not teach this class.")
 
-    doubt.status = "resolved"
+    # Update latest reply fields
+    doubt.status = "responded"
     doubt.response_text = response_text
     doubt.response_audio_url = voice_note_file_url
+
+    # Append to messages list
+    current_messages = list(doubt.messages or [])
+    current_messages.append({
+        "id": f"msg-reply-{int(uuid.uuid4().time_low)}",
+        "sender": "teacher",
+        "text": response_text,
+        "audio_url": voice_note_file_url,
+        "timestamp": "Just now"
+    })
+    doubt.messages = current_messages
+
     db.commit()
     db.refresh(doubt)
 
@@ -321,6 +405,7 @@ def respond_to_doubt(
         doubt_id=str(doubt.id),
         student_id=str(doubt.student_id),
         student_name=student_name,
+        class_id=str(doubt.class_id),
         topic=doubt.topic,
         query_text=doubt.query_text,
         tried_before=doubt.tried_before,
@@ -329,6 +414,91 @@ def respond_to_doubt(
         status=doubt.status,
         response_text=doubt.response_text,
         response_audio_url=doubt.response_audio_url,
+        messages=doubt.messages,
+        created_at=doubt.created_at.isoformat(),
+    )
+
+
+def student_reply_to_doubt(
+    db: Session,
+    student: User,
+    doubt_id: str,
+    response_text: str,
+) -> StudentDoubtResponse:
+    doubt = db.query(StudentDoubt).filter(StudentDoubt.id == doubt_id).first()
+    if not doubt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doubt not found.")
+    if str(doubt.student_id) != str(student.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only reply to your own doubts.")
+
+    # Append student reply to messages list
+    current_messages = list(doubt.messages or [])
+    current_messages.append({
+        "id": f"msg-reply-{int(uuid.uuid4().time_low)}",
+        "sender": "student",
+        "text": response_text,
+        "timestamp": "Just now"
+    })
+    doubt.messages = current_messages
+    doubt.status = "pending"  # Re-mark as pending for the teacher to reply again
+
+    db.commit()
+    db.refresh(doubt)
+
+    student_name = student.full_name or "Anonymous Student"
+
+    return StudentDoubtResponse(
+        doubt_id=str(doubt.id),
+        student_id=str(doubt.student_id),
+        student_name=student_name,
+        class_id=str(doubt.class_id),
+        topic=doubt.topic,
+        query_text=doubt.query_text,
+        tried_before=doubt.tried_before,
+        attempt_text=doubt.attempt_text,
+        clarification_video_url=doubt.clarification_video_url,
+        status=doubt.status,
+        response_text=doubt.response_text,
+        response_audio_url=doubt.response_audio_url,
+        messages=doubt.messages,
+        created_at=doubt.created_at.isoformat(),
+    )
+
+
+def resolve_teacher_doubt(db: Session, teacher: User, doubt_id: str) -> StudentDoubtResponse:
+    doubt = db.query(StudentDoubt).filter(StudentDoubt.id == doubt_id).first()
+    if not doubt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doubt not found.")
+    
+    # Check teacher owns the class
+    membership = db.query(TeacherClassMembership).filter(
+        TeacherClassMembership.teacher_id == teacher.id,
+        TeacherClassMembership.class_id == doubt.class_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not teach this class.")
+        
+    doubt.status = "resolved"
+    db.commit()
+    db.refresh(doubt)
+    
+    student = db.query(User).filter(User.id == doubt.student_id).first()
+    student_name = student.full_name if student else "Anonymous Student"
+    
+    return StudentDoubtResponse(
+        doubt_id=str(doubt.id),
+        student_id=str(doubt.student_id),
+        student_name=student_name,
+        class_id=str(doubt.class_id),
+        topic=doubt.topic,
+        query_text=doubt.query_text,
+        tried_before=doubt.tried_before,
+        attempt_text=doubt.attempt_text,
+        clarification_video_url=doubt.clarification_video_url,
+        status=doubt.status,
+        response_text=doubt.response_text,
+        response_audio_url=doubt.response_audio_url,
+        messages=doubt.messages,
         created_at=doubt.created_at.isoformat(),
     )
 
@@ -390,6 +560,7 @@ def generate_playground_item(
         )
     else:
         # Trigger Manim Video explanation
+        check_and_use_doubt_quota(db, str(student.id))
         try:
             video_url = _generate_clarification_video(topic)
             if video_url:
