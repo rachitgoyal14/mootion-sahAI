@@ -95,7 +95,7 @@ export function StudentLoginPage() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="relative z-10 w-[70%] max-w-[240px] md:w-[85%] md:max-w-[320px] lg:max-w-[300px] mt-24 md:mt-16 lg:mt-[12vh] bg-[#f6f4ee] rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 flex flex-col gap-3 sm:gap-4 md:gap-6 font-montserrat border border-[#1800ad] min-h-[290px] sm:min-h-[340px] md:min-h-[380px]"
       >
-        <h2 className="text-center tracking-normal sm:tracking-[0.1em] md:tracking-[0.15em] text-[#2c2c2c] uppercase text-[10px] min-[320px]:text-[11px] min-[360px]:text-[12px] sm:text-[14px] md:text-base font-medium whitespace-nowrap">Login</h2>
+        <h2 className="text-center tracking-normal sm:tracking-[0.1em] md:tracking-[0.15em] text-[#2c2c2c] uppercase text-[10px] min-[320px]:text-[11px] min-[360px]:text-[12px] sm:text-[14px] md:text-base font-black whitespace-nowrap">Student Login</h2>
         
         <form onSubmit={handleStart} className="flex flex-col flex-1 pb-4">
           <div className="flex flex-col gap-3 md:gap-4 flex-1 justify-center relative mt-2">
@@ -110,7 +110,7 @@ export function StudentLoginPage() {
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
               disabled={isLoading}
-              className="w-full px-6 py-2 md:py-3 text-[13px] sm:text-sm md:text-base bg-transparent border border-[#1800ad] rounded-full text-center text-[#2c2c2c] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1800ad] font-montserrat"
+              className="w-full px-6 py-2 md:py-3 text-[13px] sm:text-sm md:text-base bg-transparent border border-[#1800ad] rounded-full text-center text-[#2c2c2c] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1800ad]"
             />
             <input 
               type="password" 
@@ -118,12 +118,12 @@ export function StudentLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
-              className="w-full px-6 py-2 md:py-3 text-[13px] sm:text-sm md:text-base bg-transparent border border-[#1800ad] rounded-full text-center text-[#2c2c2c] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1800ad] font-montserrat"
+              className="w-full px-6 py-2 md:py-3 text-[13px] sm:text-sm md:text-base bg-transparent border border-[#1800ad] rounded-full text-center text-[#2c2c2c] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#1800ad]"
             />
             <button 
               type="submit"
               disabled={isLoading || !studentId.trim() || !password.trim()}
-              className="w-full px-6 py-2 md:py-3 mt-2 bg-[#1800ad] border-2 border-[#1800ad] hover:bg-[#f6f4ee] text-[#f6f4ee] hover:text-[#1800ad] text-[13px] sm:text-sm md:text-base font-medium transition-all duration-300 rounded-full disabled:opacity-50"
+              className="w-full px-6 py-2 md:py-3 mt-2 bg-[#1800ad] border-2 border-[#1800ad] hover:bg-[#f6f4ee] text-[#f6f4ee] hover:text-[#1800ad] text-[13px] sm:text-sm md:text-base font-bold transition-all duration-300 rounded-full disabled:opacity-50"
             >
               {isLoading ? "Starting..." : "Start"}
             </button>
@@ -133,13 +133,13 @@ export function StudentLoginPage() {
         <div className="mt-auto">
           <div className="flex items-center justify-center w-full relative mb-4 -mt-2 md:-mt-4">
             <div className="absolute left-0 right-0 h-[1.5px] bg-[#1800ad]"></div>
-            <span className="relative z-10 bg-[#f6f4ee] px-3 tracking-wide text-[#2c2c2c] text-xs font-medium lowercase">or</span>
+            <span className="relative z-10 bg-[#f6f4ee] px-3 tracking-wide text-[#2c2c2c] text-xs font-semibold lowercase">or</span>
           </div>
 
           <button 
             type="button"
             onClick={() => navigate('/signup/student')} 
-            className="w-full px-6 py-2 md:py-3 bg-[#1800ad] border-2 border-[#1800ad] hover:bg-[#f6f4ee] text-[#f6f4ee] hover:text-[#1800ad] text-[13px] sm:text-sm md:text-base font-medium transition-all duration-300 rounded-full"
+            className="w-full px-6 py-2 md:py-3 bg-[#1800ad] border-2 border-[#1800ad] hover:bg-[#f6f4ee] text-[#f6f4ee] hover:text-[#1800ad] text-[13px] sm:text-sm md:text-base font-bold transition-all duration-300 rounded-full"
           >
             Set up your account
           </button>

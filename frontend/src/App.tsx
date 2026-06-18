@@ -24,6 +24,9 @@ import { TeacherTopicSetupPage } from './pages/TeacherTopicSetupPage';
 // Route Guards
 import { ProtectedRoute, LoginRoute } from './components/ProtectedRoute';
 
+// NotFound Page
+import { NotFoundPage } from './app/not-found';
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -44,7 +47,7 @@ export default function App() {
 
         {/* Protected Teacher Routes */}
         <Route path="/teacher/login" element={<LoginRoute><TeacherLoginPage /></LoginRoute>} />
-        <Route path="/teacher/onboarding" element={<ProtectedRoute allowedRole="teacher"><TeacherOnboardingPage /></ProtectedRoute>} />
+        <Route path="/teacher/onboarding" element={<TeacherOnboardingPage />} />
         <Route path="/teacher/home" element={<ProtectedRoute allowedRole="teacher"><TeacherDashboardPage /></ProtectedRoute>} />
         <Route path="/teacher/class/:id" element={<ProtectedRoute allowedRole="teacher"><TeacherClassViewPage /></ProtectedRoute>} />
         <Route path="/teacher/chapter-setup/:classId/:chapterId" element={<ProtectedRoute allowedRole="teacher"><TeacherChapterSetupPage /></ProtectedRoute>} />
@@ -52,6 +55,12 @@ export default function App() {
         <Route path="/teacher/broadcast" element={<ProtectedRoute allowedRole="teacher"><TeacherBroadcastPage /></ProtectedRoute>} />
         <Route path="/teacher/analytics" element={<ProtectedRoute allowedRole="teacher"><TeacherAnalyticsPage /></ProtectedRoute>} />
         <Route path="/teacher/doubts" element={<ProtectedRoute allowedRole="teacher"><TeacherDoubtsPage /></ProtectedRoute>} />
+
+        {/* Student login route */}
+        <Route path="/student/login" element={<LoginRoute><StudentLoginPage /></LoginRoute>} />
+
+        {/* Catch-all unmatched routes */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
   );
