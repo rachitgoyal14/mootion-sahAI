@@ -5,9 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import require_teacher
-from app.schemas.chapter import ChapterBootstrapResponse, ChapterListItem, ChapterResponse
-from app.services.chapter_service import bootstrap_chapters_from_curriculum, get_class_chapter, list_class_chapters
+from app.core.deps import require_teacher, require_teacher_or_student
+from app.schemas.chapter import ChapterAssetGenerateRequest, ChapterAssetGenerateResponse, ChapterBootstrapResponse, ChapterListItem, ChapterResponse
+from app.services.chapter_service import bootstrap_chapters_from_curriculum, generate_chapter_asset, get_class_chapter, list_class_chapters
 
 
 router = APIRouter(prefix="/teachers/classes/{class_id}/chapters", tags=["chapters"])
@@ -35,3 +35,15 @@ def chapters(class_id: str, user=Depends(require_teacher), db: Session = Depends
 @router.get("/{chapter_id}", response_model=ChapterResponse)
 def chapter_detail(class_id: str, chapter_id: str, user=Depends(require_teacher), db: Session = Depends(get_db)):
     return get_class_chapter(db, user, class_id, chapter_id)
+
+
+@router.post("/{chapter_id}/assets/{asset_id}/generate", response_model=ChapterAssetGenerateResponse)
+def generate_asset(
+    class_id: str,
+    chapter_id: str,
+    asset_id: str,
+    request: ChapterAssetGenerateRequest,
+    user=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    return generate_chapter_asset(db, user, class_id, chapter_id, asset_id, request)

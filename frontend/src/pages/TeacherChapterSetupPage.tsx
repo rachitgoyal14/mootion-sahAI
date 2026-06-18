@@ -39,6 +39,24 @@ interface ActivityItem {
   payload_json: any;
 }
 
+const DIRECT_GENERATION_TYPES = new Set(['concept_video', 'simulation', 'three_d_model']);
+
+const GENERATION_ESTIMATES: Record<string, number> = {
+  concept_video: 180,
+  simulation: 75,
+  three_d_model: 45,
+};
+
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (minutes === 0) {
+    return `${remainingSeconds}s`;
+  }
+  return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+};
+
 const ASSET_TYPES_ORDER = [
   'concept_video',
   'simulation',
@@ -64,6 +82,9 @@ export function TeacherChapterSetupPage() {
 
   // Active custom regenerate instructions
   const [regenText, setRegenText] = useState<Record<string, string>>({});
+  const [generationEndsAt, setGenerationEndsAt] = useState<Record<string, number>>({});
+  const [generationErrors, setGenerationErrors] = useState<Record<string, string>>({});
+  const [now, setNow] = useState(() => Date.now());
 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
 
@@ -104,6 +125,32 @@ export function TeacherChapterSetupPage() {
     fetchChapterDetails();
   }, [classId, chapterId]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const clearGenerationState = (assetId: string) => {
+    setGenerationEndsAt(prev => {
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+    setGenerationErrors(prev => {
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+  };
+
+  const clearGenerationTimer = (assetId: string) => {
+    setGenerationEndsAt(prev => {
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'ready':
@@ -128,26 +175,74 @@ export function TeacherChapterSetupPage() {
     setActivities(prev => prev.map(act => act.id === id ? { ...act, showRegenPrompt: !act.showRegenPrompt } : act));
   };
 
-  const handleRegenerateSubmit = (id: string) => {
-    const prompt = regenText[id] || '';
-    if (!prompt.trim()) return;
+  const handleRegenerateSubmit = async (activity: ActivityItem) => {
+    const prompt = (regenText[activity.id] || '').trim();
 
-    // Simulate item updating
-    setActivities(prev => prev.map(act => {
-      if (act.id === id) {
+    if (!DIRECT_GENERATION_TYPES.has(activity.asset_type)) {
+      if (!prompt) return;
+
+      // Preserve the older interactive fallback for non-generated asset types.
+      setActivities(prev => prev.map(act => {
+        if (act.id === activity.id) {
+          return {
+            ...act,
+            desc: `Regenerated using: "${prompt}"`,
+            previewText: `Rebuilt with natural focus guidelines. Adjusted details to highlight: ${prompt}`,
+            showRegenPrompt: false,
+            lastPrompt: prompt
+          };
+        }
+        return act;
+      }));
+
+      setRegenText(prev => ({ ...prev, [activity.id]: '' }));
+      return;
+    }
+
+    const estimatedSeconds = GENERATION_ESTIMATES[activity.asset_type] ?? 60;
+    const generationEnds = Date.now() + estimatedSeconds * 1000;
+
+    clearGenerationState(activity.id);
+    setGenerationEndsAt(prev => ({ ...prev, [activity.id]: generationEnds }));
+    setGenerationErrors(prev => {
+      const next = { ...prev };
+      delete next[activity.id];
+      return next;
+    });
+    setActivities(prev => prev.map(act => act.id === activity.id ? { ...act, generation_status: 'processing', showRegenPrompt: false } : act));
+
+    try {
+      const response = await api.post(`/teachers/classes/${classId}/chapters/${chapterId}/assets/${activity.id}/generate`, {
+        instructions: prompt || null,
+      });
+
+      const generatedAsset = response.asset || response;
+
+      setActivities(prev => prev.map(act => {
+        if (act.id !== activity.id) return act;
+
         return {
           ...act,
-          desc: `Regenerated using: "${prompt}"`,
-          previewText: `Rebuilt with natural focus guidelines. Adjusted details to highlight: ${prompt}`,
+          title: generatedAsset.title || act.title,
+          desc: generatedAsset.description || act.desc,
+          previewText: generatedAsset.payload_json?.instructions || generatedAsset.payload_json?.previewText || `Outline for ${generatedAsset.title || act.title}.`,
+          lastPrompt: prompt || act.lastPrompt,
+          generation_status: generatedAsset.generation_status || 'ready',
+          external_url: generatedAsset.external_url || null,
+          payload_json: generatedAsset.payload_json || {},
           showRegenPrompt: false,
-          lastPrompt: prompt
         };
-      }
-      return act;
-    }));
+      }));
 
-    // Clear buffer
-    setRegenText(prev => ({ ...prev, [id]: '' }));
+      setRegenText(prev => ({ ...prev, [activity.id]: '' }));
+      clearGenerationState(activity.id);
+    } catch (err: any) {
+      const detail = err?.detail || err?.message || 'Generation failed.';
+      console.error('Failed to generate chapter asset:', err);
+      setGenerationErrors(prev => ({ ...prev, [activity.id]: detail }));
+      setActivities(prev => prev.map(act => act.id === activity.id ? { ...act, generation_status: 'failed' } : act));
+      clearGenerationTimer(activity.id);
+    }
   };
 
   const handlePublishAssignment = () => {
@@ -251,6 +346,11 @@ export function TeacherChapterSetupPage() {
                   {activities.map((act) => {
                     console.log("Rendering asset card:", act);
                     const isReady = act.generation_status === 'ready';
+                    const isDirectGeneratable = DIRECT_GENERATION_TYPES.has(act.asset_type);
+                    const endsAt = generationEndsAt[act.id];
+                    const isGenerating = typeof endsAt === 'number';
+                    const remainingSeconds = isGenerating ? Math.max(0, Math.ceil((endsAt - now) / 1000)) : 0;
+                    const expectedSeconds = GENERATION_ESTIMATES[act.asset_type] ?? 60;
                     return (
                       <div 
                         key={act.id}
@@ -301,6 +401,24 @@ export function TeacherChapterSetupPage() {
                           <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-2xl p-4.5 mb-4 text-xs font-semibold leading-snug">
                             <div className="text-[9px] font-black uppercase tracking-wider text-[#1800ad] mb-1">Preview outline</div>
                             {act.previewText}
+                            {isDirectGeneratable && (
+                              <div className={`mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${isGenerating ? 'bg-amber-100 text-amber-800' : 'bg-[#1800ad]/8 text-[#1800ad]/65'}`}>
+                                {isGenerating ? (
+                                  <>
+                                    Generating · {remainingSeconds > 0 ? `${formatDuration(remainingSeconds)} left` : 'Finalizing...'}
+                                  </>
+                                ) : (
+                                  <>
+                                    Expected generation time · ~{formatDuration(expectedSeconds)}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            {generationErrors[act.id] && (
+                              <div className="mt-3 text-[10px] font-bold text-rose-600">
+                                {generationErrors[act.id]}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -308,8 +426,8 @@ export function TeacherChapterSetupPage() {
                         <div className="flex flex-col gap-2 border-t border-[#1800ad]/10 pt-3.5 mt-auto">
                           {act.showRegenPrompt ? (
                             <div className="flex flex-col gap-2 mt-1">
-                              <textarea 
-                                placeholder="e.g. Include real-world car braking friction scenarios..."
+                                <textarea 
+                                placeholder={isDirectGeneratable ? "Optional: add teacher notes, style guidance, or examples..." : "e.g. Include real-world car braking friction scenarios..."}
                                 value={regenText[act.id] || ''}
                                 onChange={(e) => setRegenText(prev => ({ ...prev, [act.id]: e.target.value }))}
                                 className="w-full text-xs p-3 bg-[#f6f4ee] border border-[#1800ad]/35 rounded-xl font-semibold outline-none focus:border-[#1800ad] text-[#1800ad]"
@@ -319,15 +437,17 @@ export function TeacherChapterSetupPage() {
                               <div className="flex justify-end gap-2 text-[10px] font-black" onClick={(e) => e.stopPropagation()}>
                                 <button 
                                   onClick={() => handleToggleRegenPrompt(act.id)}
+                                  disabled={isGenerating}
                                   className="px-3.5 py-1.5 rounded-full border border-[#1800ad]/30"
                                 >
                                   Cancel
                                 </button>
                                 <button 
-                                  onClick={() => handleRegenerateSubmit(act.id)}
-                                  className="px-4 py-1.5 rounded-full bg-[#1800ad] text-white flex items-center gap-1"
+                                  onClick={() => handleRegenerateSubmit(act)}
+                                  disabled={isGenerating}
+                                  className="px-4 py-1.5 rounded-full bg-[#1800ad] text-white flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                  Submit <Send size={10} />
+                                  {isGenerating ? 'Generating...' : 'Submit'} <Send size={10} />
                                 </button>
                               </div>
                             </div>
@@ -335,7 +455,7 @@ export function TeacherChapterSetupPage() {
                             <div className="flex gap-2.5 shrink-0 justify-end">
                               <button
                                 type="button"
-                                disabled={!isReady}
+                                disabled={!isReady || isGenerating}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (isReady) {
@@ -355,18 +475,18 @@ export function TeacherChapterSetupPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={!isReady}
+                                disabled={isGenerating}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (isReady) {
-                                    handleToggleRegenPrompt(act.id);
-                                  }
+                                  handleToggleRegenPrompt(act.id);
                                 }}
                                 className={`px-4 py-2 border rounded-full text-[11px] font-black flex items-center gap-1 leading-none transition-all ${
-                                  isReady ? 'border-[#1800ad] bg-[#1800ad] text-[#f6f4ee] hover:bg-white hover:text-[#1800ad]' : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  isGenerating
+                                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'border-[#1800ad] bg-[#1800ad] text-[#f6f4ee] hover:bg-white hover:text-[#1800ad]'
                                 }`}
                               >
-                                <RotateCcw size={12} /> Regenerate
+                                <RotateCcw size={12} /> {isGenerating ? 'Generating...' : isDirectGeneratable ? (isReady ? 'Regenerate' : 'Generate') : 'Regenerate'}
                               </button>
                             </div>
                           )}

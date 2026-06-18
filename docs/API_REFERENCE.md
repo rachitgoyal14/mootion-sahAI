@@ -1266,6 +1266,52 @@ Chapter asset fields:
 | `external_url` | string or null | Signed playback URL or external embed URL |
 | `payload_json` | object | Provider-specific metadata and generated content |
 
+### `POST /teachers/classes/{class_id}/chapters/{chapter_id}/assets/{asset_id}/generate`
+
+Purpose:
+
+- generate a chapter workspace asset directly from the teacher UI
+- supports `concept_video`, `simulation`, and `three_d_model`
+
+Auth:
+
+- bearer token required
+- teacher role required
+
+Request body:
+
+| Field | Required | Type | Notes |
+|---|---:|---|---|
+| `instructions` | no | string or null | Optional teacher prompt to steer the generation |
+
+Sample request:
+
+```json
+{
+  "instructions": "Focus on friction using a moving car and rough road surface."
+}
+```
+
+Success response:
+
+```json
+{
+  "chapter_id": "c1b37a56-ff54-4d33-a2cc-44f1d88ab211",
+  "estimated_seconds": 180,
+  "asset": {
+    "asset_id": "a1088c13-a663-4b2c-850e-243f4d874dbc",
+    "asset_type": "concept_video",
+    "provider": "manim",
+    "integration_target": "manim_generator",
+    "title": "Concept Video",
+    "description": "Placeholder for the AI-generated concept video.",
+    "generation_status": "ready",
+    "external_url": "https://...",
+    "payload_json": { "generated": true }
+  }
+}
+```
+
 Sample response excerpt:
 
 ```json

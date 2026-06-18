@@ -82,7 +82,7 @@ export function TeacherTopicSetupPage() {
     !activeAsset ||
     !activeAsset.payload_json ||
     Object.keys(activeAsset.payload_json).length === 0 ||
-    activeAsset.payload_json.placeholder === true ||
+    (activeAsset.generation_status !== 'ready' && activeAsset.payload_json.placeholder === true) ||
     (activeAsset.asset_type === 'quiz' && !activeAsset.payload_json.questions && !activeAsset.payload_json.quiz) ||
     (['explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && !activeAsset.payload_json.instructions);
 
