@@ -47,3 +47,17 @@ body,
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.animate-breathe {
+  animation: breathe 1.5s ease-in-out infinite;
+}
+

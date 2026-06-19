@@ -292,7 +292,7 @@ export function TeacherAnalyticsPage() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-4 md:p-8 lg:p-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-8 pb-32 lg:pb-12 h-full flex flex-col">
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-4 md:p-8 lg:p-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-8 pb-32 lg:pb-12 h-[100dvh] flex flex-col">
         
         {/* Header */}
         <header className="border-b-2 border-[#1800ad]/10 pb-4 mb-8 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2.5">

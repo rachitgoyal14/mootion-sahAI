@@ -731,49 +731,109 @@ export function StudentPlaygroundPage() {
   };
 
   const toggleFollowUpVoiceRecording = async (doubtId: string) => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (isFollowUpRecording[doubtId]) {
-      if (mediaRecorderRef.current) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      } else if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
       setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: false }));
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+      voiceStartTextRef.current = followUpTexts[doubtId] || '';
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognitionRef.current = recognition;
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
 
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setIsTranscribing(true);
-          try {
-            const transcription = await transcribeAudioWithGemini(audioBlob);
-            if (transcription) {
-              setFollowUpTexts(prev => ({
-                ...prev,
-                [doubtId]: (prev[doubtId] || '') + ' ' + transcription
-              }));
+          recognition.onstart = () => {
+            setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: true }));
+          };
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+              } else {
+                interimTranscript += transcript;
+              }
             }
-          } catch (err) {
-            console.error("Transcription error:", err);
-            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
 
-        mediaRecorder.start();
-        setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: true }));
-      } catch (err) {
-        console.error("Recording failed to start:", err);
-        alert("Failed to access microphone.");
+            const currentSpeech = finalTranscript || interimTranscript;
+            setFollowUpTexts(prev => {
+              const base = voiceStartTextRef.current;
+              const newVal = base ? `${base.trim()} ${currentSpeech.trim()}` : currentSpeech.trim();
+              return {
+                ...prev,
+                [doubtId]: newVal
+              };
+            });
+          };
+
+          recognition.onerror = (err: any) => {
+            console.error("Speech recognition error:", err);
+            setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: false }));
+          };
+
+          recognition.onend = () => {
+            setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: false }));
+            recognitionRef.current = null;
+          };
+
+          recognition.start();
+        } catch (err) {
+          console.error("Failed to start SpeechRecognition:", err);
+          setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: false }));
+        }
+      } else {
+        // Fallback to MediaRecorder + Gemini API
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              audioChunksRef.current.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            setIsTranscribing(true);
+            try {
+              const transcription = await transcribeAudioWithGemini(audioBlob);
+              if (transcription) {
+                setFollowUpTexts(prev => ({
+                  ...prev,
+                  [doubtId]: (prev[doubtId] || '') + ' ' + transcription
+                }));
+              }
+            } catch (err) {
+              console.error("Transcription error:", err);
+              alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+
+          mediaRecorder.start();
+          setIsFollowUpRecording(prev => ({ ...prev, [doubtId]: true }));
+        } catch (err) {
+          console.error("Recording failed to start:", err);
+          alert("Failed to access microphone.");
+        }
       }
     }
   };
@@ -791,46 +851,102 @@ export function StudentPlaygroundPage() {
   const [isModalVoiceRecording, setIsModalVoiceRecording] = useState(false);
   
   const toggleModalVoiceRecording = async () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (isModalVoiceRecording) {
-      if (mediaRecorderRef.current) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      } else if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
       setIsModalVoiceRecording(false);
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+      voiceStartTextRef.current = newDoubtDescription || '';
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognitionRef.current = recognition;
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
 
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setIsTranscribing(true);
-          try {
-            const transcription = await transcribeAudioWithGemini(audioBlob);
-            if (transcription) {
-              setNewDoubtDescription(prev => (prev || '') + ' ' + transcription);
+          recognition.onstart = () => {
+            setIsModalVoiceRecording(true);
+          };
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+              } else {
+                interimTranscript += transcript;
+              }
             }
-          } catch (err) {
-            console.error("Transcription error:", err);
-            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
 
-        mediaRecorder.start();
-        setIsModalVoiceRecording(true);
-      } catch (err) {
-        console.error("Recording failed to start:", err);
-        alert("Failed to access microphone.");
+            const currentSpeech = finalTranscript || interimTranscript;
+            setNewDoubtDescription(() => {
+              const base = voiceStartTextRef.current;
+              return base ? `${base.trim()} ${currentSpeech.trim()}` : currentSpeech.trim();
+            });
+          };
+
+          recognition.onerror = (err: any) => {
+            console.error("Speech recognition error:", err);
+            setIsModalVoiceRecording(false);
+          };
+
+          recognition.onend = () => {
+            setIsModalVoiceRecording(false);
+            recognitionRef.current = null;
+          };
+
+          recognition.start();
+        } catch (err) {
+          console.error("Failed to start SpeechRecognition:", err);
+          setIsModalVoiceRecording(false);
+        }
+      } else {
+        // Fallback to MediaRecorder + Gemini API
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              audioChunksRef.current.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            setIsTranscribing(true);
+            try {
+              const transcription = await transcribeAudioWithGemini(audioBlob);
+              if (transcription) {
+                setNewDoubtDescription(prev => (prev || '') + ' ' + transcription);
+              }
+            } catch (err) {
+              console.error("Transcription error:", err);
+              alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+
+          mediaRecorder.start();
+          setIsModalVoiceRecording(true);
+        } catch (err) {
+          console.error("Recording failed to start:", err);
+          alert("Failed to access microphone.");
+        }
       }
     }
   };
@@ -973,6 +1089,11 @@ export function StudentPlaygroundPage() {
                 transition={{ duration: 0.2 }}
                 className="flex flex-col gap-1.5"
               >
+                {chatSessions.length > 0 && (
+                  <div className="text-[10px] font-black uppercase tracking-widest text-[#1800ad]/60 px-1 mt-1 mb-1">
+                    Recent chats
+                  </div>
+                )}
                 {chatSessions.map((sess) => {
                   const isActive = activeSessionId === sess.id && activeWorkspaceTab === 'mootion';
                   return (
@@ -1936,46 +2057,102 @@ export function StudentPlaygroundPage() {
   };
 
   const toggleDoubtVoiceRecording = async () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (isDoubtRecording) {
-      if (mediaRecorderRef.current) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      } else if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
       setIsDoubtRecording(false);
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+      voiceStartTextRef.current = newDoubtText || '';
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognitionRef.current = recognition;
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
 
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setIsTranscribing(true);
-          try {
-            const transcription = await transcribeAudioWithGemini(audioBlob);
-            if (transcription) {
-              setNewDoubtText(prev => (prev || '') + ' ' + transcription);
+          recognition.onstart = () => {
+            setIsDoubtRecording(true);
+          };
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+              } else {
+                interimTranscript += transcript;
+              }
             }
-          } catch (err) {
-            console.error("Transcription error:", err);
-            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
 
-        mediaRecorder.start();
-        setIsDoubtRecording(true);
-      } catch (err) {
-        console.error("Recording failed to start:", err);
-        alert("Failed to access microphone.");
+            const currentSpeech = finalTranscript || interimTranscript;
+            setNewDoubtText(() => {
+              const base = voiceStartTextRef.current;
+              return base ? `${base.trim()} ${currentSpeech.trim()}` : currentSpeech.trim();
+            });
+          };
+
+          recognition.onerror = (err: any) => {
+            console.error("Speech recognition error:", err);
+            setIsDoubtRecording(false);
+          };
+
+          recognition.onend = () => {
+            setIsDoubtRecording(false);
+            recognitionRef.current = null;
+          };
+
+          recognition.start();
+        } catch (err) {
+          console.error("Failed to start SpeechRecognition:", err);
+          setIsDoubtRecording(false);
+        }
+      } else {
+        // Fallback to MediaRecorder + Gemini API
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              audioChunksRef.current.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            setIsTranscribing(true);
+            try {
+              const transcription = await transcribeAudioWithGemini(audioBlob);
+              if (transcription) {
+                setNewDoubtText(prev => (prev || '') + ' ' + transcription);
+              }
+            } catch (err) {
+              console.error("Transcription error:", err);
+              alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+
+          mediaRecorder.start();
+          setIsDoubtRecording(true);
+        } catch (err) {
+          console.error("Recording failed to start:", err);
+          alert("Failed to access microphone.");
+        }
       }
     }
   };
@@ -2889,7 +3066,7 @@ export function StudentPlaygroundPage() {
                       type="button"
                       onClick={toggleChatVoiceRecording}
                       disabled={isTranscribing}
-                      className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-2 shrink-0 ${isVoiceRecording ? 'text-red-650 animate-pulse bg-red-50 border border-red-200' : 'text-[#1800ad]/60 hover:text-[#1800ad]'}`}
+                      className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-2 shrink-0 ${isVoiceRecording ? 'text-[#f6f4ee] bg-[#1800ad] border-[#1800ad] animate-breathe border' : 'text-[#1800ad]/60 hover:text-[#1800ad]'}`}
                       title={isVoiceRecording ? "Stop recording" : "Speak live concept query"}
                     >
                       <Mic size={18} />
@@ -2929,7 +3106,7 @@ export function StudentPlaygroundPage() {
                       }
                       setIsNewDoubtModalOpen(true);
                     }}
-                    className="px-6 py-3 bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] font-black uppercase text-xs tracking-wider rounded-xl transition-all shadow active:scale-95 flex items-center gap-1.5"
+                    className="px-6 py-3 bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] font-black uppercase text-xs tracking-wider rounded-full transition-all shadow active:scale-95 flex items-center gap-1.5"
                   >
                     <Plus size={14} /> New Doubt
                   </button>
@@ -3088,7 +3265,7 @@ export function StudentPlaygroundPage() {
                           disabled={submittingFollowUpIds[selectedDoubt.doubt_id] || isTranscribing}
                           className={`p-1 hover:bg-[#1800ad]/10 rounded-full transition-all ml-1.5 shrink-0 ${
                             isFollowUpRecording[selectedDoubt.doubt_id] 
-                              ? 'text-red-650 animate-pulse bg-red-50 border border-red-250' 
+                              ? 'text-[#f6f4ee] bg-[#1800ad] border-[#1800ad] animate-breathe border' 
                               : 'text-[#1800ad]/60 hover:text-[#1800ad]'
                           }`}
                           title="Record and transcribe speech"
@@ -3267,9 +3444,9 @@ export function StudentPlaygroundPage() {
                       type="button"
                       onClick={toggleModalVoiceRecording}
                       disabled={isTranscribing}
-                      className={`absolute right-3 bottom-3 p-1.5 rounded-full transition-all border ${
+                                      className={`absolute right-3 bottom-3 p-1.5 rounded-full transition-all border ${
                         isModalVoiceRecording 
-                          ? 'text-white bg-red-650 border-red-700 animate-pulse bg-red-50' 
+                          ? 'text-[#f6f4ee] bg-[#1800ad] border-[#1800ad] animate-breathe' 
                           : 'text-[#1800ad]/60 border-transparent hover:bg-[#1800ad]/10'
                       }`}
                       title={isModalVoiceRecording ? "Stop recording" : "Record description"}
