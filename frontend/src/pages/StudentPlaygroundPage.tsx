@@ -51,6 +51,7 @@ import {
   setTeacherAssignedNew 
 } from '../data/taskStore';
 import { NavItem } from '../components/NavItem';
+import { getSketchfabEmbedUrl } from './TeacherTopicSetupPage';
 
 interface ChatMessage {
   id: string;
@@ -59,13 +60,14 @@ interface ChatMessage {
   timestamp: string;
   commandExecuted?: string;
   payload?: {
-    type: 'video' | 'simulation' | 'universe' | 'quiz' | 'subject_picker';
+    type: 'video' | 'simulation' | 'universe' | 'quiz' | 'subject_picker' | 'three_d_model' | 'video_loading' | 'simulation_loading';
     title: string;
     // Specific metadata
     video?: {
       storyboard: { step: number; title: string; description: string; duration: string; illustration: string }[];
       topic: string;
       chapters: string[];
+      url?: string;
     };
     simulation?: {
       objectDensity: number; // kg/m^3
@@ -75,6 +77,10 @@ interface ChatMessage {
     universe?: {
       subject: string;
       systemType: 'solar' | 'atom' | 'cell';
+    };
+    three_d_model?: {
+      embedUrl: string;
+      viewerUrl?: string;
     };
     quiz?: {
       currentQuestionIdx: number;
@@ -102,6 +108,71 @@ interface PreSavedSession {
 
 interface InteractiveQuizCardProps {
   payload: any;
+}
+
+export function VideoLoadingCard() {
+  const [timeLeft, setTimeLeft] = useState(120);
+
+  useEffect(() => {
+    if (timeLeft <= 0) return;
+    const timerId = setInterval(() => {
+      setTimeLeft(p => p - 1);
+    }, 1000);
+    return () => clearInterval(timerId);
+  }, [timeLeft]);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const progress = ((120 - Math.max(0, timeLeft)) / 120) * 100;
+
+  return (
+    <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 sm:p-6 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-4 font-montserrat">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-[#1800ad] text-[#f6f4ee] flex items-center justify-center animate-pulse">
+          <Film size={16} />
+        </div>
+        <div className="flex-1">
+          <h4 className="text-sm font-black uppercase tracking-wider text-[#1800ad]">Generating Video</h4>
+          <p className="text-xs text-[#1800ad]/70 font-semibold mt-1">
+            {timeLeft > 0 ? `Generating your concept video... ${formatTime(timeLeft)} remaining` : "Still generating, almost there..."}
+          </p>
+        </div>
+      </div>
+      
+      <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-1">
+        <div 
+          className="bg-[#1800ad] h-full rounded-full transition-all duration-1000 ease-linear relative overflow-hidden" 
+          style={{ width: `${progress}%` }}
+        >
+          <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SimulationLoadingCard({ payload }: { payload: any }) {
+  const state = payload.state || 'searching';
+  
+  return (
+    <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 sm:p-6 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-4 font-montserrat animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-[#1800ad] text-[#f6f4ee] flex items-center justify-center">
+          <Beaker size={16} className="animate-spin" style={{ animationDuration: '3s' }} />
+        </div>
+        <div className="flex-1">
+          <h4 className="text-sm font-black uppercase tracking-wider text-[#1800ad]">Simulation Engine</h4>
+          <p className="text-xs text-[#1800ad]/70 font-semibold mt-1">
+            {state === 'generating' ? "Generating a custom simulation for you..." : "Searching for the optimal simulation..."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function InteractiveQuizCard({ payload }: InteractiveQuizCardProps) {
@@ -399,7 +470,7 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
     };
   }
 
-  if (type === 'video') {
+  if (type === 'video' || type === 'concept_video') {
     return {
       type: 'video',
       title: asset.title ?? 'Video',
@@ -409,7 +480,8 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
         storyboard: [
           { step: 1, title: 'Introduction', description: asset.description ?? '', duration: '0:35', illustration: '🎬' },
         ],
-      },
+        url: asset.external_url ?? asset.payload_json?.video_url ?? '',
+      } as any,
     };
   }
 
@@ -439,12 +511,13 @@ function buildPayloadFromAsset(asset: any): ChatMessage['payload'] | undefined {
   }
 
   if (type === 'model' || type === 'three_d_model') {
+    const url = asset.external_url ?? asset.payload_json?.embedUrl ?? asset.payload_json?.viewerUrl ?? '';
     return {
-      type: 'universe',
+      type: 'three_d_model',
       title: asset.title ?? '3D Model',
-      universe: {
-        subject: 'Physics',
-        systemType: 'solar',
+      three_d_model: {
+        embedUrl: url,
+        viewerUrl: asset.payload_json?.viewerUrl ?? '',
       },
     };
   }
@@ -487,6 +560,62 @@ export function StudentPlaygroundPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const mirrorDivRef = useRef<HTMLDivElement>(null);
+
+  const syncScroll = useCallback(() => {
+    if (chatInputRef.current && mirrorDivRef.current) {
+      mirrorDivRef.current.scrollLeft = chatInputRef.current.scrollLeft;
+    }
+  }, []);
+
+  const focusAndMoveCursorToEnd = useCallback((newVal: string) => {
+    setTimeout(() => {
+      if (chatInputRef.current) {
+        chatInputRef.current.focus();
+        const len = newVal.length;
+        chatInputRef.current.setSelectionRange(len, len);
+        chatInputRef.current.scrollLeft = chatInputRef.current.scrollWidth;
+        if (mirrorDivRef.current) {
+          mirrorDivRef.current.scrollLeft = chatInputRef.current.scrollWidth;
+        }
+      }
+    }, 50);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(syncScroll, 0);
+    return () => clearTimeout(timer);
+  }, [textInput, syncScroll]);
+
+  const renderHighlightedText = (text: string) => {
+    if (!text) return null;
+    const regex = /(\/(?:video|model|universe|playground|simulation|quiz|ask-teacher|ask_teacher))\b/gi;
+    const parts = text.split(regex);
+    return parts.map((part, index) => {
+      if (part.match(/^\/(?:video|model|universe|playground|simulation|quiz|ask-teacher|ask_teacher)$/i)) {
+        return (
+          <span
+            key={index}
+            style={{
+              backgroundColor: '#1800ad',
+              color: '#ffffff',
+              padding: '2px 4px',
+              margin: '0 -4px',
+              borderRadius: '9999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: '1',
+              fontWeight: 600,
+            }}
+          >
+            {part}
+          </span>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
 
   // Teacher doubt tab states
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'mootion' | 'teacher'>('mootion');
@@ -813,7 +942,7 @@ export function StudentPlaygroundPage() {
             {activeWorkspaceTab === 'mootion' ? (
               <button 
                 type="button"
-                onClick={triggerNewChatModal}
+                onClick={handleStartNewSession}
                 className="w-full bg-[#1800ad] hover:opacity-95 text-[#f6f4ee] uppercase font-montserrat font-black text-xs py-4 rounded-[18px] transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 border border-[#1800ad] tracking-wider"
               >
                 <Plus size={16} /> New Chat
@@ -1015,6 +1144,74 @@ export function StudentPlaygroundPage() {
     }
   }, []);
 
+  const createNewChat = async (contextBody: any = {}, overrideTitle?: string) => {
+    try {
+      const thread: any = await api.post('/chat-with-ai/chats', contextBody);
+      const chatId = thread.chat_id;
+      
+      const newSession: PreSavedSession = {
+        id: chatId,
+        title: overrideTitle || thread.title || 'New Chat',
+        lastMsg: contextBody.assignment_title 
+                 ? `👋 Starting "${contextBody.assignment_title}"...` 
+                 : 'What concept are we exploring?',
+        timestamp: 'Just now',
+      };
+      
+      setChatSessions(prev => {
+        if (prev.some(s => s.id === chatId)) return prev;
+        return [newSession, ...prev];
+      });
+      setActiveChatId(chatId);
+      setActiveSessionId(chatId);
+      sessionStorage.setItem('mootion_chat_id', chatId);
+      
+      // Update assignment context based on thread context
+      const ctx = thread.context_json ?? {};
+      if (ctx.assignment_title || ctx.chapter_title) {
+        setAssignmentContext({
+          assignmentTitle: ctx.assignment_title,
+          chapterTitle: ctx.chapter_title,
+          subject: ctx.subject ?? ctx.class_display_name,
+          type: ctx.assignment_type,
+        });
+      } else {
+        setAssignmentContext(null);
+      }
+      
+      return { chatId, ctx };
+    } catch (err) {
+      console.error('Failed to create new chat:', err);
+      return null;
+    }
+  };
+
+  const handleStartNewSession = async () => {
+    const welcomeMsg = 'What concept are we exploring? Type "/" to summon virtual tools: video narrations, 3D orbits, sandbox simulations, or custom quizzes.';
+    const result = await createNewChat({});
+    if (result) {
+      setMessages([{
+        id: `msg-welcome-${Date.now()}`,
+        sender: 'mootion',
+        text: welcomeMsg,
+        timestamp: 'Just now',
+      }]);
+    } else {
+      // Fallback: local only session
+      const newId = `local-${Date.now()}`;
+      setChatSessions(prev => [{ id: newId, title: 'New Chat', lastMsg: '', timestamp: 'Just now' }, ...prev]);
+      setActiveSessionId(newId);
+      setActiveChatId(null);
+      setAssignmentContext(null);
+      setMessages([{
+        id: `msg-welcome-${Date.now()}`,
+        sender: 'mootion',
+        text: welcomeMsg,
+        timestamp: 'Just now',
+      }]);
+    }
+  };
+
   // ─── Create or open context-aware chat thread on mount ───────────────────
   useEffect(() => {
     const init = async () => {
@@ -1022,26 +1219,14 @@ export function StudentPlaygroundPage() {
 
       // If we have URL context params, create a new context-aware thread
       if (urlAssignmentId || urlChapterId || urlClassId) {
-        try {
-          const body: any = {};
-          if (urlAssignmentId) body.assignment_id = urlAssignmentId;
-          if (urlChapterId) body.chapter_id = urlChapterId;
-          if (urlClassId) body.class_id = urlClassId;
+        const body: any = {};
+        if (urlAssignmentId) body.assignment_id = urlAssignmentId;
+        if (urlChapterId) body.chapter_id = urlChapterId;
+        if (urlClassId) body.class_id = urlClassId;
 
-          const thread: any = await api.post('/chat-with-ai/chats', body);
-          const chatId: string = thread.chat_id;
-          const ctx = thread.context_json ?? {};
-
-          // Build assignment context banner data
-          if (ctx.assignment_title || ctx.chapter_title) {
-            setAssignmentContext({
-              assignmentTitle: ctx.assignment_title,
-              chapterTitle: ctx.chapter_title,
-              subject: ctx.subject ?? ctx.class_display_name,
-              type: ctx.assignment_type,
-            });
-          }
-
+        const result = await createNewChat(body);
+        if (result) {
+          const { ctx } = result;
           // Add welcome message
           const welcomeText = ctx.assignment_title
             ? `👋 Starting "${ctx.assignment_title}". Ask me anything or type "/" to use tools like /quiz, /simulation, /video!`
@@ -1055,37 +1240,24 @@ export function StudentPlaygroundPage() {
             text: welcomeText,
             timestamp: 'Just now',
           }]);
-
-          setActiveChatId(chatId);
-          setActiveSessionId(chatId);
-
-          // Refresh sessions list
-          const newSession: PreSavedSession = {
-            id: chatId,
-            title: thread.title ?? ctx.assignment_title ?? ctx.chapter_title ?? 'New Chat',
-            lastMsg: welcomeText.slice(0, 60) + '...',
-            timestamp: 'Just now',
-          };
-          setChatSessions(prev => [newSession, ...prev]);
-        } catch (err) {
-          console.error('Failed to create context chat thread:', err);
-          // Fall through to load existing sessions
         }
-      } else if (sessions.length > 0) {
-        // No URL context — open the most recent thread
-        const first = sessions[0];
-        setActiveChatId(first.id);
-        setActiveSessionId(first.id);
-        await loadChatHistory(first.id);
       } else {
-        // No sessions at all — show empty welcome
-        setMessages([{
-          id: `welcome-${Date.now()}`,
-          sender: 'mootion',
-          text: 'What concept are we exploring? Type "/" to summon virtual tools: video narrations, 3D orbits, sandbox simulations, or custom quizzes.',
-          timestamp: 'Just now',
-        }]);
-        setIsLoadingSessions(false);
+        const storedChatId = sessionStorage.getItem('mootion_chat_id');
+        const found = storedChatId ? sessions.find(s => s.id === storedChatId) : null;
+        if (found) {
+          setActiveChatId(found.id);
+          setActiveSessionId(found.id);
+          await loadChatHistory(found.id);
+        } else {
+          // No stored session or not found — create a new context-free chat
+          await createNewChat({});
+          setMessages([{
+            id: `welcome-${Date.now()}`,
+            sender: 'mootion',
+            text: 'What concept are we exploring? Type "/" to summon virtual tools: video narrations, 3D orbits, sandbox simulations, or custom quizzes.',
+            timestamp: 'Just now',
+          }]);
+        }
       }
     };
 
@@ -1235,10 +1407,13 @@ export function StudentPlaygroundPage() {
   const selectSubject = (subjectName: string) => {
     const match = textInput.match(/^(\/ask[-_]teacher\s+\/)/i);
     if (match) {
-      setTextInput(match[1] + subjectName + ' ');
+      const newVal = match[1] + subjectName + ' ';
+      setTextInput(newVal);
+      focusAndMoveCursorToEnd(newVal);
+    } else {
+      chatInputRef.current?.focus();
     }
     setShowSubjectSuggestions(false);
-    chatInputRef.current?.focus();
   };
 
   const renderSubjectPickerCard = (payload: any) => {
@@ -1371,9 +1546,10 @@ export function StudentPlaygroundPage() {
   };
 
   const selectCommand = (cmd: string) => {
-    setTextInput(cmd + ' ');
+    const newVal = cmd + ' ';
+    setTextInput(newVal);
     setShowCommands(false);
-    chatInputRef.current?.focus();
+    focusAndMoveCursorToEnd(newVal);
   };
 
   const triggerTeacherSimulateToggle = () => {
@@ -1488,6 +1664,92 @@ export function StudentPlaygroundPage() {
       return;
     }
 
+    const isSimulation = normalizedInput.startsWith('/simulation');
+    if (isSimulation) {
+      const topic = userInput.replace(/^\/simulation\s*/i, '').trim() || 'physics';
+      
+      if (quota >= quotaMax) {
+        setMessages(prev => [
+          ...prev,
+          { id: `msg-usr-${Date.now()}`, sender: 'student', text: userInput, timestamp: 'Just now' },
+          { id: `msg-warn-${Date.now()}`, sender: 'mootion', text: `You have reached your weekly limit of ${quotaMax} generations.`, timestamp: 'Just now' }
+        ]);
+        return;
+      }
+
+      const loadingSimId = `msg-sim-loading-${Date.now()}`;
+      setMessages(prev => [
+        ...prev,
+        { id: `msg-usr-${Date.now()}`, sender: 'student', text: userInput, timestamp: 'Just now' },
+        { 
+          id: loadingSimId, 
+          sender: 'mootion', 
+          text: '', 
+          timestamp: 'Just now',
+          payload: { type: 'simulation_loading', state: 'searching' } as any
+        }
+      ]);
+      setIsSendingMessage(true);
+
+      try {
+        let minWaitResolved = false;
+        const minWaitPromise = new Promise(resolve => setTimeout(() => {
+            minWaitResolved = true;
+            resolve(true);
+        }, 5000));
+
+        // Start the API call
+        const apiPromise = api.post('/simulations/resolve', { topic });
+        
+        // Update state if the API call succeeds before minWaitPromise
+        apiPromise.then((res: any) => {
+            if (res && res.type !== 'failed') {
+                setMessages(prev => prev.map(m => m.id === loadingSimId ? {
+                    ...m,
+                    payload: { 
+                        type: 'simulation_loading', 
+                        state: res.type === 'ai' ? 'generating' : 'searching' 
+                    } as any
+                } : m));
+            }
+        }).catch(() => {
+            // Do nothing here, it will be caught by the main catch block
+        });
+
+        const res: any = await apiPromise;
+
+        if (!minWaitResolved && res && !res.error && res.type !== 'failed') {
+            await minWaitPromise;
+        }
+
+        if (res && (res.error || res.type === 'failed')) {
+            throw new Error('Simulation generation failed');
+        }
+
+        const newQuota = incrementPlaygroundQuota();
+        setQuota(newQuota);
+
+        const assistantMsg: ChatMessage = {
+          id: `msg-sim-${Date.now()}`,
+          sender: 'mootion',
+          text: `Here is the simulation for ${topic}.`,
+          timestamp: 'Just now',
+          payload: {
+            type: 'simulation',
+            title: res.title || topic,
+            simulation: { _phetUrl: res.url } as any
+          }
+        };
+        setMessages(prev => prev.map(m => m.id === loadingSimId ? assistantMsg : m));
+      } catch (err: any) {
+        console.error('Failed to resolve simulation:', err);
+        setMessages(prev => prev.map(m => m.id.startsWith('msg-sim-loading') ? { ...m, text: `Sorry, I couldn't generate the simulation right now.`, payload: undefined } : m));
+      } finally {
+        setIsSendingMessage(false);
+      }
+      return;
+    }
+
     // ── Add student's message immediately (optimistic) ──
     const studentMsgId = `msg-usr-${Date.now()}`;
     setMessages(prev => [
@@ -1496,10 +1758,18 @@ export function StudentPlaygroundPage() {
     ]);
 
     // ── Add loading indicator ──
-    const loadingMsgId = `msg-loading-${Date.now()}`;
+    const isVideo = normalizedInput.startsWith('/video');
+    const loadingMsgId = isVideo ? `msg-vid-loading-${Date.now()}` : `msg-loading-${Date.now()}`;
+    
     setMessages(prev => [
       ...prev,
-      { id: loadingMsgId, sender: 'mootion', text: '...', timestamp: 'Just now' }
+      { 
+        id: loadingMsgId, 
+        sender: 'mootion', 
+        text: isVideo ? '' : '...', 
+        timestamp: 'Just now',
+        payload: isVideo ? { type: 'video_loading' } as any : undefined
+      }
     ]);
 
     setIsSendingMessage(true);
@@ -1508,17 +1778,8 @@ export function StudentPlaygroundPage() {
       // Ensure we have an active chat thread
       let chatId = activeChatId;
       if (!chatId) {
-        const thread: any = await api.post('/chat-with-ai/chats', { title: userInput.slice(0, 60) });
-        chatId = thread.chat_id;
-        setActiveChatId(chatId);
-        setActiveSessionId(chatId!);
-        const newSess: PreSavedSession = {
-          id: chatId!,
-          title: thread.title ?? userInput.slice(0, 40),
-          lastMsg: userInput.slice(0, 60),
-          timestamp: 'Just now',
-        };
-        setChatSessions(prev => [newSess, ...prev]);
+        const result = await createNewChat({}, userInput.slice(0, 60));
+        chatId = result?.chatId ?? null;
       }
 
       // Send the message
@@ -1592,7 +1853,11 @@ export function StudentPlaygroundPage() {
           try {
             const transcription = await transcribeAudioWithGemini(audioBlob);
             if (transcription) {
-              setTextInput(prev => (prev || '') + ' ' + transcription);
+              setTextInput(prev => {
+                const newVal = (prev || '') + ' ' + transcription;
+                focusAndMoveCursorToEnd(newVal);
+                return newVal;
+              });
             }
           } catch (err) {
             console.error("Transcription error:", err);
@@ -1659,43 +1924,14 @@ export function StudentPlaygroundPage() {
   const handlePreSessionOpen = async (sess: PreSavedSession) => {
     setActiveSessionId(sess.id);
     setActiveChatId(sess.id);
+    sessionStorage.setItem('mootion_chat_id', sess.id);
     setMessages([]);
     setAssignmentContext(null);
     await loadChatHistory(sess.id);
     setIsMobileHistoryOpen(false);
   };
 
-  const handleStartNewSession = async () => {
-    const welcomeMsg = 'What concept are we exploring? Type "/" to summon virtual tools: video narrations, 3D orbits, sandbox simulations, or custom quizzes.';
-    try {
-      const thread: any = await api.post('/chat-with-ai/chats', {});
-      const chatId = thread.chat_id;
-      const newSess: PreSavedSession = {
-        id: chatId,
-        title: thread.title ?? 'New Chat',
-        lastMsg: welcomeMsg.slice(0, 60),
-        timestamp: 'Just now',
-      };
-      setChatSessions(prev => [newSess, ...prev]);
-      setActiveSessionId(chatId);
-      setActiveChatId(chatId);
-      setAssignmentContext(null);
-      setMessages([{
-        id: `msg-welcome-${Date.now()}`,
-        sender: 'mootion',
-        text: welcomeMsg,
-        timestamp: 'Just now',
-      }]);
-    } catch {
-      // Fallback: local only session
-      const newId = `local-${Date.now()}`;
-      setChatSessions(prev => [{ id: newId, title: 'New Chat', lastMsg: '', timestamp: 'Just now' }, ...prev]);
-      setActiveSessionId(newId);
-      setActiveChatId(null);
-      setAssignmentContext(null);
-      setMessages([{ id: `msg-welcome-${Date.now()}`, sender: 'mootion', text: welcomeMsg, timestamp: 'Just now' }]);
-    }
-  };
+
 
   // Render video payload inline in message
   const renderVideoCard = (payload: any) => {
@@ -1720,10 +1956,9 @@ export function StudentPlaygroundPage() {
         {/* Real Playable HTML5 Video Player */}
         <div className="relative aspect-video rounded-2xl bg-black overflow-hidden border border-[#1800ad]/20 flex flex-col shadow-inner">
           <video 
-            src="https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" 
+            src={payload.video?.url || "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"} 
             controls 
             className="w-full h-full object-cover"
-            poster="https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg"
           />
         </div>
 
@@ -1845,7 +2080,7 @@ export function StudentPlaygroundPage() {
       return "https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_all.html";
     };
 
-    const phetUrl = getPhETUrl(topicTitle);
+    const phetUrl = payload.simulation?._phetUrl || getPhETUrl(topicTitle);
 
     return (
       <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-3 font-montserrat">
@@ -1995,6 +2230,52 @@ export function StudentPlaygroundPage() {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render inline interactive Sketchfab 3D model viewer
+  const renderThreeDModelCard = (payload: any) => {
+    const title = payload.title || "Interactive 3D Model";
+    const embedUrl = payload.three_d_model?.embedUrl || '';
+    
+    return (
+      <div className="w-full bg-[#f6f4ee] text-[#1800ad] border-2 border-[#1800ad] rounded-3xl p-4 mt-3 max-w-full overflow-hidden shadow-md flex flex-col gap-3 font-montserrat">
+        <div className="flex items-center justify-between border-b border-[#1800ad]/20 pb-2 font-montserrat">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-[#1800ad] text-[#f6f4ee] flex items-center justify-center">
+              <Layers size={16} />
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase tracking-wider text-[#1800ad] font-montserrat">{title}</h4>
+              <p className="text-[10px] text-[#1800ad]/70 font-semibold font-montserrat">Sketchfab Interactive 3D Model</p>
+            </div>
+          </div>
+          <span className="text-[9px] px-2.5 py-1 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-full font-bold uppercase font-montserrat">
+            3D Viewer Active
+          </span>
+        </div>
+
+        {/* Live Sketchfab 3D Iframe */}
+        <div className="w-full aspect-video rounded-2xl overflow-hidden border-2 border-[#1800ad]/20 bg-white" style={{ minHeight: '350px' }}>
+          {embedUrl ? (
+            <iframe 
+              src={getSketchfabEmbedUrl(embedUrl)} 
+              className="w-full h-full border-0"
+              title={title}
+              allowFullScreen
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs font-semibold text-[#1800ad]/50 italic">
+              No 3D model URL available.
+            </div>
+          )}
+        </div>
+
+        <div className="text-[10px] text-[#1800ad]/75 font-medium leading-relaxed bg-[#1800ad]/5 p-2.5 rounded-xl border border-[#1800ad]/15 font-montserrat">
+          Interact directly with the 3D canvas (drag to rotate, scroll to zoom, right-click to pan) to inspect the model.
         </div>
       </div>
     );
@@ -2191,7 +2472,7 @@ export function StudentPlaygroundPage() {
               <p className="text-xs font-black text-[#1800ad] truncate">{assignmentContext.assignmentTitle ?? assignmentContext.chapterTitle}</p>
             </div>
           </div>
-          <button onClick={() => setAssignmentContext(null)} className="shrink-0 hover:opacity-70 transition-opacity">
+          <button onClick={handleStartNewSession} className="shrink-0 hover:opacity-70 transition-opacity">
             <X size={14} className="text-[#1800ad]" />
           </button>
         </div>
@@ -2345,25 +2626,29 @@ export function StudentPlaygroundPage() {
                           {m.sender === 'student' ? 'Student Unit' : 'Mootion Engine v1.0'}
                         </div>
 
-                        <div className={`p-4 rounded-[22px] text-xs sm:text-sm font-semibold max-w-[85%] leading-relaxed ${
-                          m.sender === 'student' 
-                            ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
-                            : 'bg-[#f6f4ee] text-[#1800ad] rounded-tl-none border-2 border-[#1800ad]/30'
-                        }`}>
-                          {m.text === '...' ? (
-                            <span className="flex items-center gap-1 py-0.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                            </span>
-                          ) : cleanText(m.text)}
-                        </div>
+                        {m.text && (
+                          <div className={`p-4 rounded-[22px] text-xs sm:text-sm font-semibold max-w-[85%] leading-relaxed ${
+                            m.sender === 'student' 
+                              ? 'bg-[#1800ad] text-[#f6f4ee] rounded-tr-none' 
+                              : 'bg-[#f6f4ee] text-[#1800ad] rounded-tl-none border-2 border-[#1800ad]/30'
+                          }`}>
+                            {m.text === '...' ? (
+                              <span className="flex items-center gap-1 py-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/50 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                              </span>
+                            ) : cleanText(m.text)}
+                          </div>
+                        )}
 
                         {m.payload && (
                           <div className="w-full max-w-[95%]">
                             {m.payload.type === 'video' && renderVideoCard(m.payload)}
+                            {m.payload.type === 'video_loading' && <VideoLoadingCard />}
                             {m.payload.type === 'simulation' && renderSimulationCard(m.payload)}
-                            {m.payload.type === 'universe' && renderUniverseOrbitalCard(m.payload)}
+                            {m.payload.type === 'simulation_loading' && <SimulationLoadingCard payload={m.payload} />}
+                            {(m.payload.type === 'universe' || m.payload.type === 'three_d_model') && renderThreeDModelCard(m.payload)}
                             {m.payload.type === 'quiz' && <InteractiveQuizCard payload={m.payload} />}
                             {m.payload.type === 'subject_picker' && renderSubjectPickerCard(m.payload)}
                           </div>
@@ -2512,15 +2797,33 @@ export function StudentPlaygroundPage() {
                       <Plus size={18} />
                     </button>
                     
-                    <input
-                      ref={chatInputRef}
-                      type="text"
-                      value={textInput}
-                      onChange={handleInputChange}
-                      placeholder={isTranscribing ? "Transcribing voice using Gemini..." : "Ask anything..."}
-                      disabled={isTranscribing}
-                      className="w-full bg-transparent text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold font-montserrat"
-                    />
+                    <div className="relative flex-1 min-w-0 flex items-center h-full">
+                      <div
+                        ref={mirrorDivRef}
+                        className="absolute inset-0 pointer-events-none whitespace-pre overflow-hidden flex items-center text-xs sm:text-sm text-[#1800ad] font-semibold font-montserrat select-none px-2"
+                        style={{
+                          scrollbarWidth: 'none',
+                          msOverflowStyle: 'none',
+                        }}
+                      >
+                        {renderHighlightedText(textInput)}
+                      </div>
+                      <input
+                        ref={chatInputRef}
+                        type="text"
+                        value={textInput}
+                        onChange={handleInputChange}
+                        onScroll={syncScroll}
+                        onKeyUp={syncScroll}
+                        onKeyDown={syncScroll}
+                        placeholder={isTranscribing ? "Transcribing voice using Gemini..." : "Ask anything..."}
+                        disabled={isTranscribing}
+                        className="w-full bg-transparent text-xs sm:text-sm text-transparent caret-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold font-montserrat relative z-10 px-2"
+                        style={{
+                          caretColor: '#1800ad'
+                        }}
+                      />
+                    </div>
 
                     {/* RHS Mic trigger inside input bubble */}
                     <button
@@ -2767,8 +3070,9 @@ export function StudentPlaygroundPage() {
           {/* Cell 1: Storyboard */}
             <button
               onClick={() => {
-                setTextInput('/video');
-                chatInputRef.current?.focus();
+                const newVal = '/video ';
+                setTextInput(newVal);
+                focusAndMoveCursorToEnd(newVal);
               }}
               className="aspect-square border border-[#1800ad]/20 rounded-3xl bg-transparent hover:bg-[#1800ad]/5 flex flex-col items-center justify-center p-3 text-center transition-all group relative duration-300 hover:scale-[1.02] font-montserrat"
             >
@@ -2795,8 +3099,9 @@ export function StudentPlaygroundPage() {
             {/* Cell 3: Playground */}
             <button
               onClick={() => {
-                setTextInput('/simulation');
-                chatInputRef.current?.focus();
+                const newVal = '/simulation ';
+                setTextInput(newVal);
+                focusAndMoveCursorToEnd(newVal);
               }}
               className="aspect-square border border-[#1800ad]/20 rounded-3xl bg-transparent hover:bg-[#1800ad]/5 flex flex-col items-center justify-center p-3 text-center transition-all group relative duration-300 hover:scale-[1.02] font-montserrat"
             >
@@ -2809,8 +3114,9 @@ export function StudentPlaygroundPage() {
             {/* Cell 4: Universe */}
             <button
               onClick={() => {
-                setTextInput('/universe');
-                chatInputRef.current?.focus();
+                const newVal = '/universe ';
+                setTextInput(newVal);
+                focusAndMoveCursorToEnd(newVal);
               }}
               className="aspect-square border border-[#1800ad]/20 rounded-3xl bg-transparent hover:bg-[#1800ad]/5 flex flex-col items-center justify-center p-3 text-center transition-all group relative duration-300 hover:scale-[1.02] font-montserrat"
             >
@@ -2973,19 +3279,12 @@ export function StudentPlaygroundPage() {
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
                   if (!newChatTopic.trim()) return;
                   
-                  const newId = `sess-${Date.now()}`;
-                  const newSess = {
-                    id: newId,
-                    title: newChatTopic.trim(),
-                    lastMsg: 'Workspace loaded for ' + newChatTopic.trim() + '...',
-                    timestamp: 'Just now'
-                  };
-                  setChatSessions(prev => [newSess, ...prev]);
-                  setActiveSessionId(newId);
+                  await createNewChat({}, newChatTopic.trim());
+                  
                   setMessages([
                     {
                       id: `msg-${Date.now()}`,

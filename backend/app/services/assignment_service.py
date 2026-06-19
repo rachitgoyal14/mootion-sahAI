@@ -356,6 +356,8 @@ def _run_manim_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, 
     topic = payload_json.get("chapter_title") or payload_json.get("generation_prompt") or asset.title
     notes = str(payload_json.get("teacher_notes") or payload_json.get("instructions") or "").strip()
     prompt = topic if not notes else f"{topic}. Teacher notes: {notes}"
+    
+    print(f"[media-worker] Sending render request to Manim Service URL: {settings.manim_service_url} for prompt: '{prompt}'", flush=True)
     response = httpx.post(
         settings.manim_service_url,
         params={
@@ -367,7 +369,9 @@ def _run_manim_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, 
         timeout=300.0,
     )
     response.raise_for_status()
-    return response.json()
+    result = response.json()
+    print(f"[media-worker] Manim render call complete. Response payload: {result}", flush=True)
+    return result
 
 
 def _run_model_finder_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
@@ -412,6 +416,7 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
         asset.payload_json = {**asset.payload_json, "generated": False, "result": result}
 
     db.commit()
+    print("[media-worker] Asset update committed to DB", flush=True)
 
 
 def _run_quiz_generation(asset: ChapterAsset, payload_json: dict) -> dict[str, object]:
@@ -500,3 +505,4 @@ def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
         asset.generation_status = "failed"
         asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
         db.commit()
+        print("[media-worker] Asset update committed to DB", flush=True)

@@ -39,7 +39,7 @@ from app.simulation_engine import SimulationOrchestrator
 
 TOOL_NAMES = {"video", "model", "quiz", "simulation"}
 EXPLICIT_VIDEO_TERMS = ("video", "animation", "show me", "visualize", "visualise", "watch")
-EXPLICIT_MODEL_TERMS = ("model", "3d", "3-d", "diagram", "structure", "look like")
+EXPLICIT_MODEL_TERMS = ("model", "3d", "3-d", "diagram", "structure", "look like", "universe")
 EXPLICIT_QUIZ_TERMS = ("quiz", "test me", "practice", "mcq", "questions")
 EXPLICIT_SIMULATION_TERMS = ("simulation", "simulate", "what happens if", "experiment", "interactive")
 
@@ -279,6 +279,25 @@ def _plan_tool_calls(message: str, context: dict[str, Any], history: str) -> dic
         "response_style": "detailed" if complexity >= 2 else "concise",
     }
 
+    # Force tool calls if the message starts with a slash command
+    msg_lower = message.strip().lower()
+    if msg_lower.startswith("/video"):
+        fallback_plan["tool_calls"].append({"tool_name": "video", "reason": "Explicit video slash command."})
+        fallback_plan["use_text_answer"] = False
+        return fallback_plan
+    elif msg_lower.startswith("/universe"):
+        fallback_plan["tool_calls"].append({"tool_name": "model", "reason": "Explicit universe slash command."})
+        fallback_plan["use_text_answer"] = False
+        return fallback_plan
+    elif msg_lower.startswith("/quiz"):
+        fallback_plan["tool_calls"].append({"tool_name": "quiz", "reason": "Explicit quiz slash command."})
+        fallback_plan["use_text_answer"] = False
+        return fallback_plan
+    elif msg_lower.startswith("/simulation"):
+        fallback_plan["tool_calls"].append({"tool_name": "simulation", "reason": "Explicit simulation slash command."})
+        fallback_plan["use_text_answer"] = False
+        return fallback_plan
+
     if not settings.azure_openai_endpoint or not settings.azure_openai_api_key:
         if explicit_video or complexity >= 2:
             fallback_plan["tool_calls"].append({"tool_name": "video", "reason": "Video support is useful here."})
@@ -420,8 +439,17 @@ def _persist_simulation_result(db: Session, result: Any, prompt: str) -> None:
     db.commit()
 
 
+def _extract_command_topic(command_prefix: str, message: str, context: dict[str, Any]) -> str:
+    msg_strip = message.strip()
+    if msg_strip.lower().startswith(command_prefix):
+        topic = re.sub(rf"^{command_prefix}\s*", "", msg_strip, flags=re.IGNORECASE).strip()
+        if topic:
+            return topic
+    return str(context.get("chapter_title") or context.get("assignment_title") or message)
+
+
 def _run_video_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
-    topic = context.get("chapter_title") or context.get("assignment_title") or message
+    topic = _extract_command_topic("/video", message, context)
     response = httpx.post(
         settings.manim_service_url,
         params={
@@ -434,17 +462,53 @@ def _run_video_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
     )
     response.raise_for_status()
     data = response.json()
+
+    # Upload generated video to Cloudflare R2
+    video_id = data.get("video_id")
+    external_url = None
+    if video_id:
+        try:
+            from app.services.media_service import download_manim_video
+            from app.core.storage import get_object_storage_client, presigned_media_url
+            from io import BytesIO
+            
+            print(f"[chat-ai] Downloading generated Manim video bytes for video_id: {video_id}...", flush=True)
+            video_bytes, content_type = download_manim_video(video_id)
+            
+            object_key = f"chat-assets/videos/{video_id}.mp4"
+            client = get_object_storage_client()
+            bucket = settings.object_storage_bucket
+            
+            print(f"[chat-ai] Uploading chat video to R2 (bucket={bucket}, key={object_key})...", flush=True)
+            client.put_object(
+                bucket,
+                object_key,
+                BytesIO(video_bytes),
+                len(video_bytes),
+                content_type=content_type
+            )
+            print(f"[chat-ai] Chat video upload complete.", flush=True)
+            external_url = presigned_media_url(bucket, object_key)
+            print(f"[chat-ai] Generated external url: {external_url}", flush=True)
+        except Exception as upload_exc:
+            print(f"[chat-ai] Warning: Failed to upload generated video to R2: {upload_exc}", flush=True)
+            
+    if not external_url:
+        external_url = data.get("video_url") or data.get("video_path") or data.get("url")
+
     return {
         "asset_type": "video",
         "title": "Explanation video",
-        "external_url": data.get("video_url") or data.get("video_path") or data.get("url"),
+        "external_url": external_url,
         "payload_json": data,
     }
 
 
 def _run_model_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
-    query = context.get("chapter_title") or context.get("assignment_title") or message
-    data = find_model(str(query))
+    msg_strip = message.strip().lower()
+    prefix = "/model" if msg_strip.startswith("/model") else "/universe"
+    query = _extract_command_topic(prefix, message, context)
+    data = find_model(query)
     if data.get("error") or data.get("message") in {"No models found.", "No suitable model found."}:
         raise RuntimeError(str(data.get("error") or data.get("message") or "No model found"))
     return {
@@ -456,7 +520,7 @@ def _run_model_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_quiz_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
-    topic = context.get("chapter_title") or context.get("assignment_title") or message
+    topic = _extract_command_topic("/quiz", message, context)
     data = _generate_quiz(topic=str(topic))
     return {
         "asset_type": "quiz",
@@ -467,7 +531,7 @@ def _run_quiz_tool(message: str, context: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_simulation_tool(db: Session, message: str, context: dict[str, Any]) -> dict[str, Any]:
-    topic = context.get("chapter_title") or context.get("assignment_title") or message
+    topic = _extract_command_topic("/simulation", message, context)
     instructions = context.get("assignment_instructions") or ""
     prompt = f"Teach me {topic}. {instructions}".strip()
     result = _SIMULATION_ORCHESTRATOR.pipeline.run(prompt)
