@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,10 +37,20 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
+const getGeminiApiKey = (): string => {
+  const envKey = (import.meta as any).env.GEMINI_API_KEY;
+  if (envKey && envKey !== 'MY_GEMINI_API_KEY' && envKey.trim() !== '') {
+    return envKey;
+  }
+  return "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
+};
+
 const transcribeAudioWithGemini = async (blob: Blob): Promise<string> => {
   const base64 = await blobToBase64(blob);
-  const apiKey = "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const apiKey = getGeminiApiKey();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  
+  const cleanMimeType = (blob.type || 'audio/webm').split(';')[0];
   
   const response = await fetch(url, {
     method: 'POST',
@@ -52,7 +62,7 @@ const transcribeAudioWithGemini = async (blob: Blob): Promise<string> => {
         parts: [
           {
             inlineData: {
-              mimeType: blob.type || 'audio/webm',
+              mimeType: cleanMimeType,
               data: base64
             }
           },
@@ -85,13 +95,27 @@ export function TeacherDoubtsPage() {
   const [submittingIds, setSubmittingIds] = useState<Record<string, boolean>>({});
   
   // AI Suggestions & Speech-to-Text States
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  
+  const recognitionRef = useRef<any>(null);
+  const voiceStartTextRef = useRef<string>('');
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
+
+  const focusAndMoveCursorToEnd = useCallback((newVal: string) => {
+    setTimeout(() => {
+      if (chatInputRef.current) {
+        chatInputRef.current.focus();
+        const len = newVal.length;
+        chatInputRef.current.setSelectionRange(len, len);
+        chatInputRef.current.scrollLeft = chatInputRef.current.scrollWidth;
+      }
+    }, 50);
+  }, []);
+
   // Mobile filter list toggle
   const [isMobileListOpen, setIsMobileListOpen] = useState<boolean>(false);
 
@@ -247,71 +271,142 @@ export function TeacherDoubtsPage() {
     const text = responseInputs[doubtId]?.trim();
     if (!text) return;
     await handleRespondDirectly(doubtId, text);
+    
+    // Clear the AI suggestion after successfully sending a reply
+    setAiSuggestions(prev => {
+      const updated = { ...prev };
+      delete updated[doubtId];
+      return updated;
+    });
   };
 
   const toggleRecording = async (doubtId: string) => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (isRecording) {
-      if (mediaRecorderRef.current) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      } else if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
       setIsRecording(false);
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+      voiceStartTextRef.current = responseInputs[doubtId] || '';
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognitionRef.current = recognition;
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
 
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setIsTranscribing(true);
-          try {
-            const transcription = await transcribeAudioWithGemini(audioBlob);
-            if (transcription) {
-              setResponseInputs(prev => ({
-                ...prev,
-                [doubtId]: (prev[doubtId] || '') + ' ' + transcription
-              }));
+          recognition.onstart = () => {
+            setIsRecording(true);
+          };
+
+          recognition.onresult = (event: any) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+              } else {
+                interimTranscript += transcript;
+              }
             }
-          } catch (err) {
-            console.error("Transcription error:", err);
-            alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
 
-        mediaRecorder.start();
-        setIsRecording(true);
-      } catch (err) {
-        console.error("Recording failed to start:", err);
-        alert("Failed to access microphone.");
+            const currentSpeech = finalTranscript || interimTranscript;
+            setResponseInputs(prev => {
+              const base = voiceStartTextRef.current;
+              const newVal = base ? `${base.trim()} ${currentSpeech.trim()}` : currentSpeech.trim();
+              focusAndMoveCursorToEnd(newVal);
+              return {
+                ...prev,
+                [doubtId]: newVal
+              };
+            });
+          };
+
+          recognition.onerror = (err: any) => {
+            console.error("Speech recognition error:", err);
+            setIsRecording(false);
+          };
+
+          recognition.onend = () => {
+            setIsRecording(false);
+            recognitionRef.current = null;
+          };
+
+          recognition.start();
+        } catch (err) {
+          console.error("Failed to start SpeechRecognition:", err);
+          setIsRecording(false);
+        }
+      } else {
+        // Fallback to MediaRecorder + Gemini API
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              audioChunksRef.current.push(e.data);
+            }
+          };
+
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            setIsTranscribing(true);
+            try {
+              const transcription = await transcribeAudioWithGemini(audioBlob);
+              if (transcription) {
+                setResponseInputs(prev => {
+                  const newVal = ((prev[doubtId] || '').trim() + ' ' + transcription.trim()).trim();
+                  focusAndMoveCursorToEnd(newVal);
+                  return {
+                    ...prev,
+                    [doubtId]: newVal
+                  };
+                });
+              }
+            } catch (err) {
+              console.error("Transcription error:", err);
+              alert("Failed to transcribe voice. Make sure microphone permission is enabled.");
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+
+          mediaRecorder.start();
+          setIsRecording(true);
+        } catch (err) {
+          console.error("Recording failed to start:", err);
+          alert("Failed to access microphone.");
+        }
       }
     }
   };
 
-  const generateAIReplies = async (queryText: string) => {
+  const generateAIResponse = async (doubtId: string, queryText: string) => {
+    if (responseInputs[doubtId]?.trim()) return;
+    if (aiSuggestions[doubtId]) return;
+    
     setIsGeneratingSuggestions(true);
-    setAiSuggestions([]);
     try {
-      const apiKey = "AIzaSyDJWjudoaGxCVLbHo-PdjzVoirvM1r-oqg";
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const apiKey = getGeminiApiKey();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       
       const prompt = `You are an expert teaching assistant helping a teacher respond to a student's doubt.
 Student's question: "${queryText}"
 
-Generate 3 diverse, polite, and helpful short reply suggestions (1-2 sentences each). 
-Provide the response as a valid JSON array of strings, like this:
-["suggestion 1", "suggestion 2", "suggestion 3"]
-
-Do not output any markdown formatting, backticks, or comments. Output only the raw JSON array.`;
+Provide a direct, helpful, and polite response to this question. Keep it concise (1-3 sentences).
+Do not add any prefix, introductory remarks, markdown, or formatting. Output only the raw text response itself.`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -323,19 +418,16 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
       
       if (!response.ok) throw new Error("Gemini suggestions error");
       const data = await response.json();
-      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        setAiSuggestions(parsed);
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      text = text.trim();
+      if (text) {
+        setAiSuggestions(prev => ({
+          ...prev,
+          [doubtId]: text
+        }));
       }
     } catch (err) {
-      console.error("Failed to generate AI replies:", err);
-      setAiSuggestions([
-        "That's a great question! Let's look at the formula and verify it step-by-step.",
-        "Could you check your calculations again? Let me know where you get stuck.",
-        "Let's discuss this in detail in the next class!"
-      ]);
+      console.error("Failed to generate AI reply:", err);
     } finally {
       setIsGeneratingSuggestions(false);
     }
@@ -346,14 +438,10 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
       const selectedDoubt = doubts.find(d => d.doubt_id === selectedDoubtId);
       if (selectedDoubt) {
         const isResolved = selectedDoubt.status.toLowerCase() === 'resolved' || selectedDoubt.status.toLowerCase() === 'responded';
-        if (!isResolved) {
-          generateAIReplies(selectedDoubt.query_text);
-        } else {
-          setAiSuggestions([]);
+        if (!isResolved && selectedDoubt.query_text && selectedDoubt.query_text.trim() !== '') {
+          generateAIResponse(selectedDoubtId, selectedDoubt.query_text);
         }
       }
-    } else {
-      setAiSuggestions([]);
     }
   }, [selectedDoubtId, doubts]);
 
@@ -363,7 +451,7 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
     <div className="flex flex-1 w-full h-[100dvh] bg-[#1800ad] font-montserrat text-[#1800ad] overflow-hidden relative">
       
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl">
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl font-montserrat">
         <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
         <NavItem icon={<BookOpen size={24} />} onClick={() => navigate('/teacher/home')} />
         <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/home')} />
@@ -373,7 +461,7 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30 font-montserrat">
         <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/')}>
-          <span className="text-[#f6f4ee] font-val text-[42px] leading-none tracking-widest mt-1 mr-1">M</span>
+          <span className="text-[#f6f4ee] font-montserrat font-black text-3xl leading-none tracking-widest">M</span>
         </div>
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
@@ -382,16 +470,16 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
           <NavItem icon={<MessageSquare size={24} />} active onClick={() => navigate('/teacher/doubts')} />
         </nav>
         <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
-          <span className="text-[#1800ad] font-extrabold text-lg">P</span>
+          <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
         </div>
       </aside>
 
       {/* Viewport content */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-4 md:p-8 lg:p-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-10 pb-32 lg:pb-12 relative flex flex-col h-[100dvh]">
-        <div className="max-w-[1250px] w-full flex flex-col h-full">
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-4 md:p-8 lg:p-10 w-full overflow-y-auto custom-scrollbar pt-3 md:pt-10 pb-24 md:pb-8 lg:pb-10 relative flex flex-col h-[100dvh]">
+        <div className="max-w-[1600px] w-full mx-auto flex flex-col h-full">
           
           {/* Header Element */}
-          <header className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-3 border-b-2 border-[#1800ad]/15 pb-4 mb-6">
+          <header className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-3 border-b-2 border-[#1800ad]/15 pb-2 md:pb-4 mb-3 md:mb-6">
             <div className="flex items-center justify-between w-full lg:w-auto">
               <div>
                 <span className="text-xs font-black uppercase tracking-widest text-[#1800ad]/60 font-mono">Live Doubt Resolution Center</span>
@@ -400,12 +488,9 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
                 </h1>
               </div>
             </div>
-            <p className="text-xs font-semibold text-[#1800ad]/70 leading-none">
-              Respond directly to curriculum doubts or prompt automated replies. Live synced with student playgrounds!
-            </p>
           </header>
 
-          <div className="flex flex-1 gap-6 h-[calc(100%-80px)] overflow-hidden relative">
+          <div className="flex flex-1 gap-6 overflow-hidden relative w-full min-h-0">
             
             {/* Left List (Fixed width on desktop, full width on mobile) */}
             <div className={`flex flex-col h-full overflow-hidden w-full md:w-[300px] lg:w-[350px] shrink-0 ${selectedDoubtId ? 'hidden md:flex' : 'flex'}`}>
@@ -503,9 +588,6 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
                         >
                           <ArrowLeft size={14} />
                         </button>
-                        <div className="w-9 h-9 rounded-full bg-[#1800ad]/10 text-[#1800ad] flex items-center justify-center font-black text-xs">
-                          {selectedDoubt.student_name.charAt(0)}
-                        </div>
                         <div>
                           <h2 className="font-black text-xs sm:text-sm text-[#1800ad] leading-tight">{selectedDoubt.student_name}</h2>
                           <span className="text-[9px] font-bold text-[#1800ad]/60 uppercase tracking-wide leading-none block mt-0.5 font-montserrat">
@@ -514,28 +596,19 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-[8px] font-bold text-[#1800ad]/50">
-                            {new Date(selectedDoubt.created_at).toLocaleString()}
-                          </span>
-                          <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                            selectedDoubt.status.toLowerCase() === 'resolved'
-                              ? 'bg-emerald-100 border-emerald-250 text-emerald-800'
-                              : selectedDoubt.status.toLowerCase() === 'responded'
-                              ? 'bg-blue-100 border-blue-250 text-blue-800'
-                              : 'bg-red-100 border-red-250 text-red-800'
-                          }`}>
-                            {selectedDoubt.status.toLowerCase() === 'resolved' ? 'Resolved' : selectedDoubt.status.toLowerCase() === 'responded' ? 'Responded' : 'Pending'}
-                          </span>
-                        </div>
-                        {selectedDoubt.status.toLowerCase() !== 'resolved' && (
+                        {selectedDoubt.status.toLowerCase() !== 'resolved' ? (
                           <button
                             type="button"
                             onClick={() => handleResolveDoubt(selectedDoubt.doubt_id)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-[#f6f4ee] rounded-full text-[9px] font-black uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-sm"
+                            disabled={submittingIds[selectedDoubt.doubt_id]}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-[#f6f4ee] rounded-full text-xs font-black uppercase tracking-wider transition-all hover:scale-[1.02] active:scale-95 shadow-sm"
                           >
-                            Resolve
+                            {submittingIds[selectedDoubt.doubt_id] ? "Resolving..." : "Mark Resolved"}
                           </button>
+                        ) : (
+                          <span className="px-4 py-2 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-full text-xs font-black uppercase tracking-wider">
+                            Resolved
+                          </span>
                         )}
                       </div>
                     </div>
@@ -611,94 +684,115 @@ Do not output any markdown formatting, backticks, or comments. Output only the r
                           )}
                         </>
                       )}
+
+                      {/* Suggested AI Reply Draft */}
+                      {aiSuggestions[selectedDoubt.doubt_id] && (
+                        <div className="flex flex-col gap-1.5 max-w-[85%] self-end items-end mt-2 select-none shrink-0">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-[#1800ad]/55 select-none">
+                            Suggested AI Reply:
+                          </span>
+                          <div className="p-4 bg-gradient-to-br from-[#1800ad]/5 to-[#1800ad]/10 text-[#1800ad] border-2 border-dashed border-[#1800ad]/20 rounded-[22px] rounded-tr-none text-xs sm:text-sm font-semibold leading-relaxed shadow-sm">
+                            <p className="italic">"{aiSuggestions[selectedDoubt.doubt_id]}"</p>
+                            <div className="mt-3.5 flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const draftText = aiSuggestions[selectedDoubt.doubt_id];
+                                  if (!draftText) return;
+                                  await handleRespondDirectly(selectedDoubt.doubt_id, draftText);
+                                  setResponseInputs(prev => ({
+                                    ...prev,
+                                    [selectedDoubt.doubt_id]: ''
+                                  }));
+                                  setAiSuggestions(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[selectedDoubt.doubt_id];
+                                    return updated;
+                                  });
+                                }}
+                                className="px-3.5 py-1.5 bg-[#1800ad] hover:bg-[#1800ad]/90 text-[#f6f4ee] text-[10px] font-black uppercase tracking-wider rounded-full transition-all active:scale-95 flex items-center gap-1 shadow-md hover:scale-[1.02]"
+                              >
+                                <Check size={11} className="stroke-[2.5]" /> Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAiSuggestions(prev => {
+                                    const updated = { ...prev };
+                                    delete updated[selectedDoubt.doubt_id];
+                                    return updated;
+                                  });
+                                }}
+                                className="px-3.5 py-1.5 bg-white border border-[#1800ad]/20 hover:bg-gray-50 text-[#1800ad]/75 text-[10px] font-black uppercase tracking-wider rounded-full transition-all active:scale-95 flex items-center gap-1 hover:border-[#1800ad]/40"
+                              >
+                                <X size={11} className="stroke-[2.5]" /> Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Input Reply Area */}
                     {!isResolved && (
-                      <div className="pt-4 border-t border-[#1800ad]/10 flex flex-col gap-3.5 shrink-0">
+                      <div className="pt-4 border-t border-[#1800ad]/10 flex flex-col gap-2 shrink-0">
                         
-                        {/* AI Suggestions */}
-                        <div className="flex flex-col gap-2 select-none">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-[#1800ad]/60 flex items-center gap-1.5">
-                            <Sparkles size={11} className="text-amber-600 fill-current" /> Suggested Replies (Gemini):
-                          </span>
-                          {isGeneratingSuggestions ? (
-                            <div className="flex items-center gap-1 text-[10px] text-[#1800ad]/50 italic">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#1800ad]/30 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                              <span>Formulating replies...</span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-2 max-h-[85px] overflow-y-auto custom-scrollbar">
-                              {aiSuggestions.map((suggestion, sIdx) => (
-                                <button
-                                  key={sIdx}
-                                  type="button"
-                                  onClick={() => setResponseInputs(prev => ({ ...prev, [selectedDoubt.doubt_id]: suggestion }))}
-                                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-left text-[10px] font-semibold leading-normal transition-all max-w-full hover:scale-[1.01]"
-                                >
-                                  {suggestion}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Textarea container with Mic button */}
+                        {/* Input container with Mic button and Send arrow button */}
                         <div className="relative">
-                          <textarea
+                          <input
+                            type="text"
+                            ref={chatInputRef}
                             value={responseInputs[selectedDoubt.doubt_id] || ''}
                             onChange={(e) => setResponseInputs(prev => ({ ...prev, [selectedDoubt.doubt_id]: e.target.value }))}
                             placeholder={isTranscribing ? "Transcribing voice using Gemini..." : `Type or record reply to ${selectedDoubt.student_name}...`}
                             disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing}
-                            className="w-full min-h-[90px] p-4 pr-12 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-2xl text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold resize-none"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleRespond(selectedDoubt.doubt_id);
+                              }
+                            }}
+                            className="w-full h-12 pl-6 pr-24 bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full text-xs sm:text-sm text-[#1800ad] placeholder:text-[#1800ad]/40 focus:outline-none font-semibold"
                           />
-                          <button
-                            type="button"
-                            onClick={() => toggleRecording(selectedDoubt.doubt_id)}
-                            disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing}
-                            className={`absolute right-3.5 bottom-3.5 p-2 rounded-full transition-all border ${
-                              isRecording 
-                                ? 'text-white bg-red-600 border-red-700 animate-pulse' 
-                                : 'text-[#1800ad]/60 border-transparent hover:bg-[#1800ad]/10'
-                            }`}
-                            title={isRecording ? "Stop recording" : "Record voice response"}
-                          >
-                            <Mic size={16} />
-                          </button>
+                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                            {/* Microphone Button */}
+                            <button
+                              type="button"
+                              onClick={() => toggleRecording(selectedDoubt.doubt_id)}
+                              disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing}
+                              className={`p-2 rounded-full transition-all border ${
+                                isRecording 
+                                  ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad] animate-breathe' 
+                                  : 'text-[#1800ad]/60 border-transparent hover:bg-[#1800ad]/10'
+                              }`}
+                              title={isRecording ? "Stop recording" : "Record voice response"}
+                            >
+                              <Mic size={16} />
+                            </button>
+                            {/* Send Button (just a send arrow) */}
+                            <button
+                              type="button"
+                              onClick={() => handleRespond(selectedDoubt.doubt_id)}
+                              disabled={!responseInputs[selectedDoubt.doubt_id]?.trim() || submittingIds[selectedDoubt.doubt_id] || isTranscribing || isRecording}
+                              className="p-2 text-[#1800ad] hover:bg-[#1800ad]/10 rounded-full transition-all disabled:opacity-40 flex items-center justify-center"
+                              title="Send message"
+                            >
+                              {submittingIds[selectedDoubt.doubt_id] ? (
+                                <div className="w-4 h-4 border-2 border-[#1800ad] border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <Send size={16} className="stroke-[2.5]" />
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         {isTranscribing && (
-                          <div className="text-[10px] text-amber-700 font-semibold italic flex items-center gap-1.5 animate-pulse select-none">
+                          <div className="text-[10px] text-amber-700 font-semibold italic flex items-center gap-1.5 animate-pulse select-none px-2 mt-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span> Gemini is transcribing your spoken voice...
                           </div>
                         )}
 
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => handleResolveDoubt(selectedDoubt.doubt_id)}
-                            disabled={submittingIds[selectedDoubt.doubt_id] || isTranscribing || isRecording}
-                            className="px-4 py-2.5 bg-white border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all active:scale-95 disabled:opacity-40"
-                          >
-                            Mark Resolved
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRespond(selectedDoubt.doubt_id)}
-                            disabled={!responseInputs[selectedDoubt.doubt_id]?.trim() || submittingIds[selectedDoubt.doubt_id] || isTranscribing || isRecording}
-                            className="px-5 py-2.5 bg-[#1800ad] text-[#f6f4ee] hover:opacity-95 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-40"
-                          >
-                            {submittingIds[selectedDoubt.doubt_id] ? (
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                              <>
-                                <Send size={12} /> Send
-                              </>
-                            )}
-                          </button>
-                        </div>
+
                       </div>
                     )}
 

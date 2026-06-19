@@ -11,7 +11,8 @@ import {
   Loader2, 
   Flame, 
   Calendar,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
@@ -44,6 +45,7 @@ export function TeacherTopicSetupPage() {
   const [topicAssets, setTopicAssets] = useState<any[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [isLoadingChapter, setIsLoadingChapter] = useState(true);
+  const [resolvedClass, setResolvedClass] = useState<any | null>(null);
   const [activeAsset, setActiveAsset] = useState<any | null>(() => {
     // If state is passed via navigate, initialize activeAsset immediately for smoother transitions
     if (state && (state.payload_json !== undefined || state.external_url !== undefined)) {
@@ -65,6 +67,81 @@ export function TeacherTopicSetupPage() {
     const loadChapterAndAsset = async () => {
       setIsLoadingChapter(true);
       try {
+        // Fetch and resolve the class metadata
+        try {
+          const classes = await api.get('/teachers/classes');
+          const rawId = (classId || '').toLowerCase().trim();
+          
+          const normalizeGrade = (g: any): string => {
+            if (g === null || g === undefined) return '';
+            const str = String(g).trim().toLowerCase();
+            const digits = str.replace(/\D/g, '');
+            return digits || str;
+          };
+
+          const normalizeSubject = (s: any): string => {
+            if (s === null || s === undefined) return '';
+            return String(s).trim().toLowerCase().replace(/[\s\-_]+/g, ' ');
+          };
+
+          let parsedGrade = '';
+          let parsedSubject = '';
+
+          const matchedClass = classes.find((c: any) => {
+            if (c.class_id && c.class_id.toLowerCase() === rawId) {
+              parsedGrade = c.grade;
+              parsedSubject = c.subject;
+              return true;
+            }
+
+            const parts = rawId.split('-');
+            const classIdx = parts.indexOf('class');
+            let gradeVal = '';
+            if (classIdx !== -1 && parts[classIdx + 1]) {
+              gradeVal = parts[classIdx + 1];
+            } else {
+              const match = rawId.match(/\d+/);
+              if (match) gradeVal = match[0];
+            }
+            const subjectPart = parts
+              .filter((p) => p !== 'class' && p !== gradeVal)
+              .join(' ');
+
+            parsedGrade = gradeVal;
+            parsedSubject = subjectPart;
+
+            const classGradeNormalized = normalizeGrade(c.grade);
+            const targetGradeNormalized = normalizeGrade(gradeVal);
+
+            const classSubjectNormalized = normalizeSubject(c.subject);
+            const targetSubjectNormalized = normalizeSubject(subjectPart);
+
+            if (classGradeNormalized === targetGradeNormalized && classSubjectNormalized === targetSubjectNormalized) {
+              return true;
+            }
+
+            const numericGrade = parseInt(targetGradeNormalized, 10);
+            if (
+              !isNaN(numericGrade) &&
+              numericGrade >= 5 &&
+              numericGrade <= 10 &&
+              classGradeNormalized === targetGradeNormalized &&
+              classSubjectNormalized === 'science' &&
+              ['physics', 'chemistry', 'biology'].includes(targetSubjectNormalized)
+            ) {
+              return true;
+            }
+
+            return false;
+          });
+
+          if (matchedClass) {
+            setResolvedClass(matchedClass);
+          }
+        } catch (classErr) {
+          console.error("Failed to load class details:", classErr);
+        }
+
         const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
         setResolvedChapter(data);
         console.log("Fetched chapter details in activity subpage:", data);
@@ -210,7 +287,7 @@ export function TeacherTopicSetupPage() {
   };
 
   return (
-    <div className="flex flex-1 w-full h-[100dvh] bg-[#1800ad] font-montserrat text-[#1800ad] overflow-hidden relative">
+    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
       
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30 font-montserrat">
@@ -231,20 +308,20 @@ export function TeacherTopicSetupPage() {
       </aside>
 
       {/* Main Container */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-10 pb-24 relative flex flex-col h-full font-montserrat">
-        
-        {/* Back Link Header */}
-        <div className="flex items-center gap-3 mb-6 shrink-0">
-          <button 
-            onClick={() => navigate(`/teacher/chapter-setup/${classId}/${chapterId}`)}
-            className="p-2 border-2 border-[#1800ad] rounded-full text-[#1800ad] hover:bg-[#1800ad]/10 transition-all font-montserrat flex items-center justify-center"
-          >
-            <ArrowLeft size={16} className="stroke-[3]" />
-          </button>
-          <span className="text-xs font-bold uppercase tracking-wider opacity-85">
-            Back to Chapter Setup
-          </span>
-        </div>
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full relative flex flex-col font-montserrat min-h-[100dvh]">
+        <div className="max-w-[1300px] w-full mx-auto flex-1 flex flex-col">
+          {/* Back Link Header */}
+          <div className="flex items-center gap-3 mb-6 shrink-0">
+            <button 
+              onClick={() => navigate(`/teacher/chapter-setup/${classId}/${chapterId}`)}
+              className="p-2 border-2 border-[#1800ad] rounded-full text-[#1800ad] hover:bg-[#1800ad]/10 transition-all font-montserrat flex items-center justify-center"
+            >
+              <ArrowLeft size={16} className="stroke-[3]" />
+            </button>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-85">
+              Back to Chapter Setup
+            </span>
+          </div>
 
         {/* Dynamic Topic Context Area */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 mb-8 border-b-2 border-[#1800ad]/15 shrink-0">
@@ -396,16 +473,33 @@ export function TeacherTopicSetupPage() {
                     </div>
                   )}
 
-                  {/* Detailed renderer for explain_it, predict_it, spot_it, connect_it */}
-                  {['explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
-                    <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
-                      {activeAsset.payload_json.instructions ? (
-                        <div className="bg-[#1800ad]/5 p-4 rounded-xl border border-[#1800ad]/10">
-                          <span className="block text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60 mb-1">Pedagogical Instructions:</span>
-                          <p className="text-xs sm:text-sm text-[#1800ad] whitespace-pre-wrap">{activeAsset.payload_json.instructions}</p>
-                        </div>
-                      ) : (
-                        Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
+                    {/* Detailed renderer for explain_it, predict_it, spot_it, connect_it */}
+                    {['explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
+                      <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
+                        {activeAsset.payload_json.instructions ? (
+                          <div className="bg-[#1800ad]/5 p-4 rounded-xl border border-[#1800ad]/10">
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60 mb-1">Pedagogical Instructions:</span>
+                            <p className="text-xs sm:text-sm text-[#1800ad] whitespace-pre-wrap">{activeAsset.payload_json.instructions}</p>
+                          </div>
+                        ) : (
+                          Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
+                            const val = activeAsset.payload_json[key];
+                            if (typeof val === 'object') return null;
+                            return (
+                              <div key={key} className="flex justify-between items-center border-b border-[#1800ad]/5 py-1">
+                                <span className="capitalize font-bold text-[#1800ad]/60">{key.replace('_', ' ')}:</span>
+                                <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+
+                    {/* General payload fallback list for other asset types if any */}
+                    {!['quiz', 'explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
+                      <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
+                        {Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
                           const val = activeAsset.payload_json[key];
                           if (typeof val === 'object') return null;
                           return (
@@ -414,94 +508,78 @@ export function TeacherTopicSetupPage() {
                               <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
                             </div>
                           );
-                        })
-                      )}
-                    </div>
-                  )}
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-                  {/* General payload fallback list for other asset types if any */}
-                  {!['quiz', 'explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
-                    <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
-                      {Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
-                        const val = activeAsset.payload_json[key];
-                        if (typeof val === 'object') return null;
-                        return (
-                          <div key={key} className="flex justify-between items-center border-b border-[#1800ad]/5 py-1">
-                            <span className="capitalize font-bold text-[#1800ad]/60">{key.replace('_', ' ')}:</span>
-                            <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+              {/* Embedded Viewport / Link Section */}
+              {activeAsset.external_url && (
+                <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1800ad]/10 pb-2">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">
+                      Interactive Live Preview
+                    </h3>
+                    <a 
+                      href={activeAsset.external_url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-xs font-bold text-[#1800ad] hover:underline flex items-center gap-1"
+                    >
+                      Open in new tab &rarr;
+                    </a>
+                  </div>
 
-            {/* Embedded Viewport / Link Section */}
-            {activeAsset.external_url && (
-              <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1800ad]/10 pb-2">
-                  <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">
-                    Interactive Live Preview
-                  </h3>
-                  <a 
-                    href={activeAsset.external_url} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="text-xs font-bold text-[#1800ad] hover:underline flex items-center gap-1"
-                  >
-                    Open in new tab &rarr;
-                  </a>
-                </div>
-
-                <div className="w-full bg-[#1800ad]/5 rounded-2xl overflow-hidden relative border-2 border-[#1800ad] shadow-inner animate-fadeIn" style={{ height: '450px' }}>
-                  {activeAsset.asset_type === 'concept_video' ? (
-                    activeAsset.external_url.includes('youtube.com') || activeAsset.external_url.includes('youtu.be') ? (
+                  <div className="w-full bg-[#1800ad]/5 rounded-2xl overflow-hidden relative border-2 border-[#1800ad] shadow-inner animate-fadeIn" style={{ height: '450px' }}>
+                    {activeAsset.asset_type === 'concept_video' ? (
+                      activeAsset.external_url.includes('youtube.com') || activeAsset.external_url.includes('youtu.be') ? (
+                        <iframe
+                          src={activeAsset.external_url.replace('watch?v=', 'embed/')}
+                          title="Video Player"
+                          allowFullScreen
+                          className="w-full h-full border-0"
+                        />
+                      ) : (
+                        <video 
+                          src={activeAsset.external_url} 
+                          controls 
+                          className="w-full h-full object-contain bg-black" 
+                        />
+                      )
+                    ) : activeAsset.asset_type === 'simulation' ? (
                       <iframe
-                        src={activeAsset.external_url.replace('watch?v=', 'embed/')}
-                        title="Video Player"
+                        src={activeAsset.external_url}
+                        title="Simulation Embed"
                         allowFullScreen
                         className="w-full h-full border-0"
+                        style={{ background: '#ffffff' }}
+                      />
+                    ) : activeAsset.asset_type === 'three_d_model' ? (
+                      <iframe
+                        src={getSketchfabEmbedUrl(activeAsset.external_url)}
+                        title="3D Model Viewer"
+                        allowFullScreen
+                        className="w-full h-full border-0"
+                        style={{ background: '#ffffff' }}
                       />
                     ) : (
-                      <video 
-                        src={activeAsset.external_url} 
-                        controls 
-                        className="w-full h-full object-contain bg-black" 
+                      <iframe
+                        src={activeAsset.external_url}
+                        title="Asset Viewport"
+                        allowFullScreen
+                        className="w-full h-full border-0"
+                        style={{ background: '#ffffff' }}
                       />
-                    )
-                  ) : activeAsset.asset_type === 'simulation' ? (
-                    <iframe
-                      src={activeAsset.external_url}
-                      title="Simulation Embed"
-                      allowFullScreen
-                      className="w-full h-full border-0"
-                      style={{ background: '#ffffff' }}
-                    />
-                  ) : activeAsset.asset_type === 'three_d_model' ? (
-                    <iframe
-                      src={getSketchfabEmbedUrl(activeAsset.external_url)}
-                      title="3D Model Viewer"
-                      allowFullScreen
-                      className="w-full h-full border-0"
-                      style={{ background: '#ffffff' }}
-                    />
-                  ) : (
-                    <iframe
-                      src={activeAsset.external_url}
-                      title="Asset Viewport"
-                      allowFullScreen
-                      className="w-full h-full border-0"
-                      style={{ background: '#ffffff' }}
-                    />
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </main>
 
       {/* SUCCESS CELEBRATION ASSIGNMENT MODAL WITH CONFIG NOTES */}

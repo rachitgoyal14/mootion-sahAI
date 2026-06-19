@@ -21,7 +21,8 @@ import {
   RotateCcw,
   Send,
   Eye,
-  Layers
+  Layers,
+  Users
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
@@ -80,6 +81,7 @@ export function TeacherChapterSetupPage() {
   const [publishing, setPublishing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [resolvedChapter, setResolvedChapter] = useState<any | null>(null);
+  const [resolvedClass, setResolvedClass] = useState<any | null>(null);
 
   // Active custom regenerate instructions
   const [regenText, setRegenText] = useState<Record<string, string>>({});
@@ -95,6 +97,81 @@ export function TeacherChapterSetupPage() {
     const fetchChapterDetails = async () => {
       setIsLoading(true);
       try {
+        // Fetch and resolve the class metadata
+        try {
+          const classes = await api.get('/teachers/classes');
+          const rawId = (classId || '').toLowerCase().trim();
+          
+          const normalizeGrade = (g: any): string => {
+            if (g === null || g === undefined) return '';
+            const str = String(g).trim().toLowerCase();
+            const digits = str.replace(/\D/g, '');
+            return digits || str;
+          };
+
+          const normalizeSubject = (s: any): string => {
+            if (s === null || s === undefined) return '';
+            return String(s).trim().toLowerCase().replace(/[\s\-_]+/g, ' ');
+          };
+
+          let parsedGrade = '';
+          let parsedSubject = '';
+
+          const matchedClass = classes.find((c: any) => {
+            if (c.class_id && c.class_id.toLowerCase() === rawId) {
+              parsedGrade = c.grade;
+              parsedSubject = c.subject;
+              return true;
+            }
+
+            const parts = rawId.split('-');
+            const classIdx = parts.indexOf('class');
+            let gradeVal = '';
+            if (classIdx !== -1 && parts[classIdx + 1]) {
+              gradeVal = parts[classIdx + 1];
+            } else {
+              const match = rawId.match(/\d+/);
+              if (match) gradeVal = match[0];
+            }
+            const subjectPart = parts
+              .filter((p) => p !== 'class' && p !== gradeVal)
+              .join(' ');
+
+            parsedGrade = gradeVal;
+            parsedSubject = subjectPart;
+
+            const classGradeNormalized = normalizeGrade(c.grade);
+            const targetGradeNormalized = normalizeGrade(gradeVal);
+
+            const classSubjectNormalized = normalizeSubject(c.subject);
+            const targetSubjectNormalized = normalizeSubject(subjectPart);
+
+            if (classGradeNormalized === targetGradeNormalized && classSubjectNormalized === targetSubjectNormalized) {
+              return true;
+            }
+
+            const numericGrade = parseInt(targetGradeNormalized, 10);
+            if (
+              !isNaN(numericGrade) &&
+              numericGrade >= 5 &&
+              numericGrade <= 10 &&
+              classGradeNormalized === targetGradeNormalized &&
+              classSubjectNormalized === 'science' &&
+              ['physics', 'chemistry', 'biology'].includes(targetSubjectNormalized)
+            ) {
+              return true;
+            }
+
+            return false;
+          });
+
+          if (matchedClass) {
+            setResolvedClass(matchedClass);
+          }
+        } catch (classErr) {
+          console.error("Failed to load class details:", classErr);
+        }
+
         const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
         setResolvedChapter(data);
         console.log("Fetched chapter details on chapter detail page:", data);
@@ -324,10 +401,10 @@ export function TeacherChapterSetupPage() {
   };
 
   return (
-    <div className="flex flex-1 w-full h-[100dvh] bg-[#1800ad] font-montserrat text-[#1800ad] overflow-hidden relative">
+    <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
       
       {/* Mobile Nav */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee]">
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl font-montserrat">
         <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
         <NavItem icon={<BookOpen size={24} />} active onClick={() => navigate(`/teacher/class/${classId}`)} />
         <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
@@ -335,9 +412,9 @@ export function TeacherChapterSetupPage() {
       </nav>
 
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30">
+      <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30 font-montserrat">
         <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/')}>
-          <span className="text-[#f6f4ee] font-val text-[42px] leading-none tracking-widest mt-1 mr-1">M</span>
+          <span className="text-[#f6f4ee] font-montserrat font-black text-3xl leading-none tracking-widest">M</span>
         </div>
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
@@ -346,13 +423,13 @@ export function TeacherChapterSetupPage() {
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
         <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
-          <span className="text-[#1800ad] font-extrabold text-lg">P</span>
+          <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
         </div>
       </aside>
 
       {/* Content wrapper */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-10 pb-32 lg:pb-12 relative flex flex-col h-full">
-        <div className="max-w-[1000px] w-full">
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full relative flex flex-col font-montserrat min-h-[100dvh]">
+        <div className="max-w-[1300px] w-full mx-auto">
           
           {/* Back Trigger */}
           <div className="flex items-center gap-3 mb-6">
@@ -362,7 +439,7 @@ export function TeacherChapterSetupPage() {
             >
               <ArrowLeft size={16} className="stroke-[3]" />
             </button>
-            <span className="text-xs font-black uppercase tracking-wider font-mono opacity-85">Chapter Workspace Builder</span>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-85">Chapter Workspace Builder</span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -373,12 +450,11 @@ export function TeacherChapterSetupPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4"
+                className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4"
               >
                 <div className="relative mb-6">
                   {/* Absolute outer orbit circle rotating */}
                   <div className="w-16 h-16 rounded-full border-4 border-t-[#1800ad] border-r-transparent border-b-transparent border-l-transparent animate-spin duration-1000"></div>
-                  <Sparkles size={28} className="text-[#1800ad] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-bounce mt-0.5" />
                 </div>
                 <h2 className="text-xl md:text-2xl font-black text-[#1800ad] tracking-tight">
                   Generating content for Static Friction & Laws...
@@ -398,18 +474,29 @@ export function TeacherChapterSetupPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex flex-col gap-6"
               >
-                <div className="border-b-2 border-[#1800ad]/15 pb-4 mb-4">
-                  <span className="text-xs font-bold font-mono text-[#1800ad]/60 uppercase">NCERT Chapter Structure</span>
-                  <h1 className="text-3xl font-black text-[#1800ad] tracking-tight mt-1">
-                    {resolvedChapter ? resolvedChapter.title : 'Loading...'} Chapter Setup
-                  </h1>
-                  <p className="text-sm font-semibold opacity-75 mt-1">
-                    Review or regenerate activities. Customize student assessment logic with specific natural language prompts.
-                  </p>
+                {/* Classroom Header Area */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[#1800ad]/15 pb-6 mb-8">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <span className="text-[10px] font-black uppercase tracking-widest bg-[#1800ad] text-[#f6f4ee] px-3 py-1 rounded-full">
+                        {resolvedClass ? `Class ${resolvedClass.grade}` : 'Loading...'}
+                      </span>
+                      <span className="text-xs font-bold text-[#1800ad] flex items-center gap-1.5 bg-[#1800ad]/5 px-3 py-1 rounded-full">
+                        <Users size={13} />
+                        {resolvedClass?.student_count || 24} students enrolled
+                      </span>
+                    </div>
+                    <h1 className="text-3xl md:text-4xl font-extrabold text-[#1800ad] tracking-tight">
+                      {resolvedClass ? resolvedClass.subject : 'Loading...'} • {resolvedChapter ? resolvedChapter.title : 'Loading...'}
+                    </h1>
+                    <p className="text-sm font-semibold opacity-75 mt-1.5">
+                      Review or regenerate activities. Customize student assessment logic with specific natural language prompts.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Grid of the 8 activities */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {activities.map((act) => {
                     console.log("Rendering asset card:", act);
                     const isTopicCard = act.asset_type === 'topic';

@@ -165,8 +165,8 @@ export function StudentExplorePage() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-10 pb-32 lg:pb-12 relative flex flex-col h-full">
-        <div className="max-w-[1300px] w-full h-full">
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full overflow-y-auto custom-scrollbar pt-6 md:pt-10 pb-32 lg:pb-12 relative flex flex-col h-[100dvh]">
+        <div className="max-w-[1300px] w-full h-full flex flex-col">
 
           {/* Header */}
           <header className="flex flex-col xl:flex-row xl:justify-between xl:items-end gap-6 mb-8 lg:mb-10 w-full relative">
@@ -203,21 +203,21 @@ export function StudentExplorePage() {
               ))}
             </div>
           ) : classes.length === 0 ? (
-            <div className="py-20 flex flex-col items-center justify-center text-center opacity-60">
+            <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 pt-12 pb-16">
               <BookOpen size={64} className="text-[#1800ad] mb-4 opacity-50" />
               <h3 className="text-xl font-bold text-[#1800ad]">No classes yet</h3>
               <p className="text-[#1800ad] mt-1">Join a class on the home page to start exploring.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-12 pb-10">
+            <div className="flex flex-col gap-12 pb-10 flex-1">
               {/* If loading chapters for the first time */}
               {isLoadingChapters && classes.every(c => !chaptersByClass[c.class_id]) ? (
-                <div className="py-16 flex items-center justify-center gap-3">
+                <div className="py-16 flex items-center justify-center gap-3 flex-1">
                   <div className="w-8 h-8 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
                   <span className="text-sm font-bold text-[#1800ad]/60 animate-pulse">Loading chapters...</span>
                 </div>
               ) : filteredGroups.length === 0 ? (
-                <div className="py-20 flex flex-col items-center justify-center text-center opacity-60">
+                <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 pt-12 pb-16">
                   <BookOpen size={64} className="text-[#1800ad] mb-4 opacity-50" />
                   <h3 className="text-xl font-bold text-[#1800ad]">No chapters found</h3>
                   <p className="text-[#1800ad] mt-1">Your teacher hasn't set up chapters yet, or nothing matches your search.</p>
