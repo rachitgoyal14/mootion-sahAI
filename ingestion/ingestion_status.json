@@ -1,0 +1,177 @@
+{
+  "class10_maths.zip": {
+    "collection_name": "class_10_mathematics",
+    "grade": "10",
+    "subject": "mathematics",
+    "points_count": 673,
+    "status": "completed"
+  },
+  "class10_science.zip": {
+    "collection_name": "class_10_science",
+    "grade": "10",
+    "subject": "science",
+    "points_count": 835,
+    "status": "completed"
+  },
+  "class11_biology.zip": {
+    "collection_name": "class_11_biology",
+    "grade": "11",
+    "subject": "biology",
+    "points_count": 885,
+    "status": "completed"
+  },
+  "class11_chemistry_part1.zip": {
+    "collection_name": "class_11_chemistry",
+    "grade": "11",
+    "subject": "chemistry",
+    "points_count": 1120,
+    "status": "completed"
+  },
+  "class11_chemistry_part2.zip": {
+    "collection_name": "class_11_chemistry",
+    "grade": "11",
+    "subject": "chemistry",
+    "points_count": 433,
+    "status": "completed"
+  },
+  "class11_maths.zip": {
+    "collection_name": "class_11_mathematics",
+    "grade": "11",
+    "subject": "mathematics",
+    "points_count": 892,
+    "status": "completed"
+  },
+  "class11_physics_part1.zip": {
+    "collection_name": "class_11_physics",
+    "grade": "11",
+    "subject": "physics",
+    "points_count": 779,
+    "status": "completed"
+  },
+  "class11_physics_part2.zip": {
+    "collection_name": "class_11_physics",
+    "grade": "11",
+    "subject": "physics",
+    "points_count": 718,
+    "status": "completed"
+  },
+  "class12_biology.zip": {
+    "collection_name": "class_12_biology",
+    "grade": "12",
+    "subject": "biology",
+    "points_count": 840,
+    "status": "completed"
+  },
+  "class12_chemistry_part1.zip": {
+    "collection_name": "class_12_chemistry",
+    "grade": "12",
+    "subject": "chemistry",
+    "points_count": 648,
+    "status": "completed"
+  },
+  "class12_chemistry_part2.zip": {
+    "collection_name": "class_12_chemistry",
+    "grade": "12",
+    "subject": "chemistry",
+    "points_count": 470,
+    "status": "completed"
+  },
+  "class12_maths_part1.zip": {
+    "collection_name": "class_12_mathematics",
+    "grade": "12",
+    "subject": "mathematics",
+    "points_count": 558,
+    "status": "completed"
+  },
+  "class12_maths_part2.zip": {
+    "collection_name": "class_12_mathematics",
+    "grade": "12",
+    "subject": "mathematics",
+    "points_count": 544,
+    "status": "completed"
+  },
+  "class12_physics_part1.zip": {
+    "collection_name": "class_12_physics",
+    "grade": "12",
+    "subject": "physics",
+    "points_count": 845,
+    "status": "completed"
+  },
+  "class12_physics_part2.zip": {
+    "collection_name": "class_12_physics",
+    "grade": "12",
+    "subject": "physics",
+    "points_count": 551,
+    "status": "completed"
+  },
+  "class6_maths.zip": {
+    "collection_name": "class_6_mathematics",
+    "grade": "6",
+    "subject": "mathematics",
+    "points_count": 840,
+    "status": "completed"
+  },
+  "class6_science.zip": {
+    "collection_name": "class_6_science",
+    "grade": "6",
+    "subject": "science",
+    "points_count": 729,
+    "status": "completed"
+  },
+  "class7_maths_part1.zip": {
+    "collection_name": "class_7_mathematics",
+    "grade": "7",
+    "subject": "mathematics",
+    "points_count": 711,
+    "status": "completed"
+  },
+  "class7_maths_part2.zip": {
+    "collection_name": "class_7_mathematics",
+    "grade": "7",
+    "subject": "mathematics",
+    "points_count": 499,
+    "status": "completed"
+  },
+  "class7_science.zip": {
+    "collection_name": "class_7_science",
+    "grade": "7",
+    "subject": "science",
+    "points_count": 636,
+    "status": "completed"
+  },
+  "class8_maths_part1.zip": {
+    "collection_name": "class_8_mathematics",
+    "grade": "8",
+    "subject": "mathematics",
+    "points_count": 650,
+    "status": "completed"
+  },
+  "class8_maths_part2.zip": {
+    "collection_name": "class_8_mathematics",
+    "grade": "8",
+    "subject": "mathematics",
+    "points_count": 451,
+    "status": "completed"
+  },
+  "class8_science.zip": {
+    "collection_name": "class_8_science",
+    "grade": "8",
+    "subject": "science",
+    "points_count": 827,
+    "status": "completed"
+  },
+  "class9_maths_part1.zip": {
+    "collection_name": "class_9_mathematics",
+    "grade": "9",
+    "subject": "mathematics",
+    "points_count": 577,
+    "status": "completed"
+  },
+  "class9_science.zip": {
+    "collection_name": "class_9_science",
+    "grade": "9",
+    "subject": "science",
+    "points_count": 1186,
+    "status": "completed"
+  }
+}
