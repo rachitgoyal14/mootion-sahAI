@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -27,6 +27,29 @@ function QuizContent({ task }: { task: Task }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<any>(null);
+  const submitAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isSubmitted || submitting || submitAttemptedRef.current) return;
+    const dbTask = (task as any).dbTask;
+    if (!dbTask) return;
+    submitAttemptedRef.current = true;
+    let score = 0;
+    questions.forEach(q => { if (answers[q.id] === q.correctAnswer) score++; });
+    setSubmitting(true);
+    api.post(`/students/classes/${dbTask.class_id}/assignments/${dbTask.assignment_id}/submit-quiz`, {
+      score,
+      total_questions: questions.length
+    }).then(res => {
+      setSubmitResult(res);
+    }).catch(err => {
+      console.error("Failed to submit quiz score:", err);
+    }).finally(() => {
+      setSubmitting(false);
+    });
+  }, [isSubmitted, questions, answers, task]);
 
   useEffect(() => {
     // If it's a real backend task and we have quiz questions, use them!
@@ -97,6 +120,7 @@ function QuizContent({ task }: { task: Task }) {
     questions.forEach(question => {
       if (answers[question.id] === question.correctAnswer) score++;
     });
+    const dbTask = (task as any).dbTask;
 
     return (
        <div className="flex flex-col items-center flex-1 mt-6 max-w-3xl mx-auto w-full">
@@ -107,8 +131,18 @@ function QuizContent({ task }: { task: Task }) {
             </div>
             <p className="font-bold text-[#1800ad]/70 mb-8">You answered {score} out of {questions.length} correctly.</p>
             
+            {dbTask && submitting && (
+              <p className="text-sm text-[#1800ad]/50 mb-4 animate-pulse">Submitting score...</p>
+            )}
+            {dbTask && submitResult && (
+              <p className="text-sm text-green-600 font-semibold mb-4">✓ Score saved to your analytics</p>
+            )}
+            {dbTask && !submitting && !submitResult && (
+              <p className="text-sm text-amber-600 font-semibold mb-4">⚠ Score could not be saved</p>
+            )}
+            
             <div className="flex gap-4 w-full">
-              <button onClick={() => { setIsSubmitted(false); setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
+              <button onClick={() => { setIsSubmitted(false); setSubmitResult(null); submitAttemptedRef.current = false; setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
                 Try Again
               </button>
             </div>

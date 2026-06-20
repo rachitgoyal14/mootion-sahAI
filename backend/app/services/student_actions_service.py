@@ -608,6 +608,82 @@ def generate_playground_item(
 
 # --- ANALYTICS ENGINES ---
 
+def submit_quiz_attempt(
+    db: Session,
+    student: User,
+    assignment_id: str,
+    score: int,
+    total_questions: int,
+) -> StudentAttemptResponse:
+    recipient = db.query(AssignmentRecipient).filter(
+        AssignmentRecipient.assignment_id == assignment_id,
+        AssignmentRecipient.student_id == student.id,
+    ).first()
+    if not recipient:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this assignment.")
+
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+
+    pct = score / max(total_questions, 1)
+    derived = round(pct * 3)
+    feedback = f"You answered {score} out of {total_questions} correctly ({round(pct * 100)}%)."
+
+    attempt = StudentAttempt(
+        student_id=student.id,
+        assignment_id=assignment.id,
+        score_understanding=derived,
+        score_reasoning=derived,
+        score_expression=derived,
+        transcription_text=feedback,
+        ai_feedback=feedback,
+        attempt_language="english",
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    try:
+        from app.core.models import ConceptScore
+        existing_count = db.query(func.count(ConceptScore.id)).filter(
+            ConceptScore.student_id == student.id,
+            ConceptScore.chapter_id == assignment.chapter_id,
+            ConceptScore.class_id == assignment.class_id
+        ).scalar() or 0
+        attempt_number = existing_count + 1
+
+        clarity_score = float(derived) * 10.0 / 3.0
+        accuracy_score = float(derived) * 10.0 / 3.0
+        depth_score = float(derived) * 10.0 / 3.0
+        overall_score = (clarity_score + accuracy_score + depth_score) / 3.0
+
+        concept_score = ConceptScore(
+            student_id=student.id,
+            chapter_id=assignment.chapter_id,
+            class_id=assignment.class_id,
+            transcript=feedback,
+            clarity_score=clarity_score,
+            accuracy_score=accuracy_score,
+            depth_score=depth_score,
+            overall_score=overall_score,
+            llm_feedback=feedback,
+            attempt_number=attempt_number
+        )
+        db.add(concept_score)
+        db.commit()
+    except Exception as dual_write_err:
+        print(f"[student_actions_service] Dual-write to ConceptScore failed: {dual_write_err}", flush=True)
+
+    return StudentAttemptResponse(
+        attempt_id=str(attempt.id),
+        score_understanding=attempt.score_understanding,
+        score_reasoning=attempt.score_reasoning,
+        score_expression=attempt.score_expression,
+        ai_feedback=attempt.ai_feedback,
+    )
+
+
 def get_class_analytics_overview(db: Session, teacher: User, class_id: str) -> ClassAnalyticsOverview:
     # Verify access
     membership = db.query(TeacherClassMembership).filter(

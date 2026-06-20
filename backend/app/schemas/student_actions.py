@@ -9,6 +9,11 @@ class StudentAttemptSubmitRequest(BaseModel):
     language: str = "english"
 
 
+class QuizSubmitRequest(BaseModel):
+    score: int
+    total_questions: int
+
+
 class StudentAttemptResponse(BaseModel):
     attempt_id: str
     score_understanding: int
