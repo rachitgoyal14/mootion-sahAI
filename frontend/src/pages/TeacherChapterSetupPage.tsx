@@ -143,6 +143,7 @@ export function TeacherChapterSetupPage() {
   const [libraryPreview, setLibraryPreview] = useState<string | null>(null);
   const [adopting, setAdopting] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
+  const [openLangDropdownId, setOpenLangDropdownId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTeacherProfile = async () => {
@@ -378,16 +379,16 @@ export function TeacherChapterSetupPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'ready':
-        return <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-black uppercase tracking-wider">Ready</span>;
+        return <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Ready</span>;
       case 'queued':
       case 'processing':
-        return <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse">Generating...</span>;
+        return <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse whitespace-nowrap shrink-0">Generating...</span>;
       case 'placeholder':
-        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider">Not set up yet</span>;
+        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Not set up</span>;
       case 'failed':
-        return <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-black uppercase tracking-wider">Unavailable</span>;
+        return <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Unavailable</span>;
       default:
-        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider">{status}</span>;
+        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">{status}</span>;
     }
   };
 
@@ -662,9 +663,9 @@ export function TeacherChapterSetupPage() {
                       >
                         <div>
                           {/* Upper row: icon and status badge */}
-                          <div className="flex items-center justify-between mb-3.5">
-                            <div className="flex items-center gap-2.5">
-                              <span className="p-2.5 bg-[#1800ad]/5 rounded-xl border border-[#1800ad]/15 text-[#1800ad]">
+                          <div className="flex items-center justify-between mb-3.5 gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="p-2.5 bg-[#1800ad]/5 rounded-xl border border-[#1800ad]/15 text-[#1800ad] shrink-0">
                                 {act.asset_type === 'concept_video' && <Film size={18} />}
                                 {act.asset_type === 'simulation' && <Beaker size={18} />}
                                 {act.asset_type === 'three_d_model' && <Layers size={18} />}
@@ -675,7 +676,7 @@ export function TeacherChapterSetupPage() {
                                 {act.asset_type === 'spot_it' && <AlertCircle size={18} />}
                                 {act.asset_type === 'connect_it' && <BookOpen size={18} />}
                               </span>
-                              <h3 className="font-black text-sm tracking-tight text-[#1800ad]">
+                              <h3 className="font-black text-sm tracking-tight text-[#1800ad] break-words">
                                 {act.title}
                               </h3>
                             </div>
@@ -743,24 +744,67 @@ export function TeacherChapterSetupPage() {
                                 rows={2}
                                 onClick={(e) => e.stopPropagation()}
                               />
-                              {isDirectGeneratable && (
-                                <div className="flex items-center justify-between gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                              {isDirectGeneratable && act.asset_type !== 'simulation' && act.asset_type !== 'three_d_model' && (
+                                <div className="flex items-center justify-between gap-2 flex-wrap relative" onClick={(e) => e.stopPropagation()}>
                                   <label className="text-[9px] font-black uppercase tracking-wider text-[#1800ad]/65">
                                     Target Language
                                   </label>
-                                  <select
-                                    value={selectedLanguage}
-                                    onChange={(e) => setSelectedLanguage(e.target.value)}
-                                    className="bg-[#f6f4ee] text-[#1800ad] text-[10px] font-bold border border-[#1800ad]/20 px-2 py-1 rounded-lg outline-none focus:border-[#1800ad] cursor-pointer"
-                                  >
-                                    <option value="english">English</option>
-                                    <option value="hindi">Hindi (हिंदी)</option>
-                                    <option value="gujarati">Gujarati (ગુજરાતી)</option>
-                                    <option value="marathi">Marathi (मराठी)</option>
-                                    <option value="telugu">Telugu (తెలుగు)</option>
-                                    <option value="tamil">Tamil (தமிழ்)</option>
-                                    <option value="bengali">Bengali (বাংলা)</option>
-                                  </select>
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenLangDropdownId(openLangDropdownId === act.id ? null : act.id)}
+                                      className="bg-[#f6f4ee] text-[#1800ad] text-[10px] font-bold border border-[#1800ad]/20 px-3 py-1 rounded-full outline-none focus:border-[#1800ad] cursor-pointer flex items-center gap-1.5 min-w-[110px] justify-between transition-all"
+                                    >
+                                      <span>
+                                        {
+                                          {
+                                            english: 'English',
+                                            hindi: 'Hindi (हिंदी)',
+                                            gujarati: 'Gujarati (ગુજરાતી)',
+                                            marathi: 'Marathi (मराठी)',
+                                            telugu: 'Telugu (తెలుగు)',
+                                            tamil: 'Tamil (தமிழ்)',
+                                            bengali: 'Bengali (বাংলা)'
+                                          }[selectedLanguage] || 'English'
+                                        }
+                                      </span>
+                                      <svg className={`w-2 h-2 text-[#1800ad] transition-transform ${openLangDropdownId === act.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M19 9l-7 7-7-7"></path>
+                                      </svg>
+                                    </button>
+                                    {openLangDropdownId === act.id && (
+                                      <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setOpenLangDropdownId(null)} />
+                                        <div className="absolute right-0 mt-1.5 w-[150px] bg-[#fbfaf6] border-2 border-[#1800ad] rounded-2xl shadow-xl z-50 overflow-hidden py-1">
+                                          {[
+                                            { value: 'english', label: 'English' },
+                                            { value: 'hindi', label: 'Hindi (हिंदी)' },
+                                            { value: 'gujarati', label: 'Gujarati (ગુજરાતી)' },
+                                            { value: 'marathi', label: 'Marathi (मराठी)' },
+                                            { value: 'telugu', label: 'Telugu (తెలుగు)' },
+                                            { value: 'tamil', label: 'Tamil (தமிழ்)' },
+                                            { value: 'bengali', label: 'Bengali (বাংলা)' }
+                                          ].map((lang) => (
+                                            <button
+                                              key={lang.value}
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedLanguage(lang.value);
+                                                setOpenLangDropdownId(null);
+                                              }}
+                                              className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-all ${
+                                                selectedLanguage === lang.value
+                                                  ? 'bg-[#1800ad] text-[#f6f4ee]'
+                                                  : 'text-[#1800ad] hover:bg-[#1800ad]/5'
+                                              }`}
+                                            >
+                                              {lang.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               <div className="flex justify-end gap-2 text-[10px] font-black" onClick={(e) => e.stopPropagation()}>
@@ -887,19 +931,7 @@ export function TeacherChapterSetupPage() {
                   </div>
                 </div>
 
-                {/* Bottom CTA for Configuration Settings trigger */}
-                <div className="mt-8 border-t-2 border-[#1800ad]/15 pt-6 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setSuccess(false);
-                      setAssignError(null);
-                      setShowConfig(true);
-                    }}
-                    className="bg-[#1800ad] text-[#f6f4ee] py-4 px-10 rounded-full font-black text-sm uppercase tracking-widest hover:scale-102 transition-transform shadow-xl"
-                  >
-                    Assign To Class
-                  </button>
-                </div>
+
               </motion.div>
             )}
           </AnimatePresence>
@@ -1040,7 +1072,7 @@ export function TeacherChapterSetupPage() {
                   animate={{ scale: 1, y: 0 }}
                   exit={{ scale: 0.95, y: 20 }}
                   onClick={e => e.stopPropagation()}
-                  className="bg-[#f6f4ee] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+                  className="bg-[#fbfaf6] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
                 >
                   {/* Header */}
                   <div className="flex items-start justify-between p-7 pb-4 border-b border-[#1800ad]/15 shrink-0">

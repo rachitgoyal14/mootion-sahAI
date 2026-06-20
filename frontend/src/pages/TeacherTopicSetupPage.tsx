@@ -320,6 +320,7 @@ export function TeacherTopicSetupPage() {
 
   const [regenText, setRegenText] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
+  const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const [generationEndsAt, setGenerationEndsAt] = useState<number | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -463,18 +464,36 @@ export function TeacherTopicSetupPage() {
           ) : (
             <div className="w-full flex-1 flex flex-col gap-6">
 
-              {/* Header / Meta */}
-              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                <div className="flex-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60 mb-1.5 block animate-pulse font-mono">
-                    {activeAsset.asset_type.replace('_', ' ')} Resource
-                  </span>
-                  <h2 className="text-xl sm:text-2xl font-black text-[#1800ad] leading-tight">
-                    {activeAsset.title}
-                  </h2>
-                  <p className="text-xs sm:text-sm text-[#1800ad]/80 font-semibold mt-2 leading-relaxed">
-                    {activeAsset.description}
-                  </p>
+              {/* Header / Meta */}              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-5">
+                {/* Title & Assign Button Row */}
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#1800ad]/10 pb-4">
+                  <div className="flex-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60 mb-1.5 block animate-pulse font-mono">
+                      {activeAsset.asset_type.replace('_', ' ')} Resource
+                    </span>
+                    <h2 className="text-xl sm:text-2xl font-black text-[#1800ad] leading-tight">
+                      {activeAsset.title}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-[#1800ad]/80 font-semibold mt-2 leading-relaxed">
+                      {activeAsset.description}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setAssignedItemTitle(activeAsset.title);
+                      setAssignmentNotes(`Hey students! Please complete this interactive topic resource on "${activeAsset.title}".`);
+                      setSuccess(false);
+                      setAssignError(null);
+                      setIsSuccessModalOpen(true);
+                    }}
+                    className="shrink-0 bg-[#1800ad] text-[#f6f4ee] hover:bg-[#f6f4ee] hover:text-[#1800ad] border-2 border-transparent hover:border-[#1800ad] px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-1.5 h-fit self-end sm:self-start"
+                  >
+                    <CheckCircle2 size={13} className="stroke-[3]" /> Assign to Class
+                  </button>
+                </div>
+
+                {/* Content Inputs */}
+                <div className="flex flex-col gap-4">
                   <textarea
                     value={regenText}
                     onChange={(e) => setRegenText(e.target.value)}
@@ -483,24 +502,69 @@ export function TeacherTopicSetupPage() {
                     className="w-full bg-[#f6f4ee] text-[#1800ad] placeholder-[#1800ad]/40 border border-[#1800ad]/20 p-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#1800ad] resize-none"
                   />
 
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
-                      Target Video/Audio Language
-                    </label>
-                    <select
-                      value={selectedLanguage}
-                      onChange={(e) => setSelectedLanguage(e.target.value)}
-                      className="bg-[#f6f4ee] text-[#1800ad] text-xs font-bold border border-[#1800ad]/20 px-3 py-1.5 rounded-xl outline-none focus:border-[#1800ad] cursor-pointer"
-                    >
-                      <option value="english">English</option>
-                      <option value="hindi">Hindi (हिंदी)</option>
-                      <option value="gujarati">Gujarati (ગુજરાતી)</option>
-                      <option value="marathi">Marathi (मराठी)</option>
-                      <option value="telugu">Telugu (తెలుగు)</option>
-                      <option value="tamil">Tamil (தமிழ்)</option>
-                      <option value="bengali">Bengali (বাংলা)</option>
-                    </select>
-                  </div>
+                  {activeAsset.asset_type !== 'simulation' && activeAsset.asset_type !== 'three_d_model' && (
+                    <div className="flex items-center justify-between gap-3 flex-wrap relative">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
+                        Target Video/Audio Language
+                      </label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
+                          className="bg-[#f6f4ee] text-[#1800ad] text-xs font-bold border border-[#1800ad]/20 px-4 py-1.5 rounded-full outline-none focus:border-[#1800ad] cursor-pointer flex items-center gap-1.5 min-w-[120px] justify-between transition-all"
+                        >
+                          <span>
+                            {
+                              {
+                                english: 'English',
+                                hindi: 'Hindi (हिंदी)',
+                                gujarati: 'Gujarati (ગુજરાती)',
+                                marathi: 'Marathi (मराठी)',
+                                telugu: 'Telugu (తెలుగు)',
+                                tamil: 'Tamil (தமிழ்)',
+                                bengali: 'Bengali (বাংলা)'
+                              }[selectedLanguage] || 'English'
+                            }
+                          </span>
+                          <svg className={`w-2.5 h-2.5 text-[#1800ad] transition-transform ${isLangDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.5" d="M19 9l-7 7-7-7"></path>
+                          </svg>
+                        </button>
+                        {isLangDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsLangDropdownOpen(false)} />
+                            <div className="absolute right-0 mt-1.5 w-[180px] bg-[#fbfaf6] border-2 border-[#1800ad] rounded-2xl shadow-xl z-50 overflow-hidden py-1">
+                              {[
+                                { value: 'english', label: 'English' },
+                                { value: 'hindi', label: 'Hindi (हिंदी)' },
+                                { value: 'gujarati', label: 'Gujarati (ગુજરાती)' },
+                                { value: 'marathi', label: 'Marathi (मराठी)' },
+                                { value: 'telugu', label: 'Telugu (తెలుగు)' },
+                                { value: 'tamil', label: 'Tamil (தமிழ்)' },
+                                { value: 'bengali', label: 'Bengali (বাংলা)' }
+                              ].map((lang) => (
+                                <button
+                                  key={lang.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedLanguage(lang.value);
+                                    setIsLangDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left px-4.5 py-2 text-xs font-bold transition-all ${
+                                    selectedLanguage === lang.value
+                                      ? 'bg-[#1800ad] text-[#f6f4ee]'
+                                      : 'text-[#1800ad] hover:bg-[#1800ad]/5'
+                                  }`}
+                                >
+                                  {lang.label}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {generationError && (
                     <div className="text-[11px] font-bold text-rose-600">{generationError}</div>
@@ -536,82 +600,14 @@ export function TeacherTopicSetupPage() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    setAssignedItemTitle(activeAsset.title);
-                    setAssignmentNotes(`Hey students! Please complete this interactive topic resource on "${activeAsset.title}".`);
-                    setSuccess(false);
-                    setAssignError(null);
-                    setIsSuccessModalOpen(true);
-                  }}
-                  className="shrink-0 bg-[#1800ad] text-[#f6f4ee] hover:bg-amber-300 hover:text-[#1800ad] px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-1.5 h-fit self-end sm:self-start"
-                >
-                  <CheckCircle2 size={13} className="stroke-[3]" /> Assign to Class
-                </button>
               </div>
 
-              {/* Content Section */}
-              <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
-                <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad] border-b border-[#1800ad]/10 pb-2">
-                  Content
-                </h3>
-
-                {/*
-                activeTopic && selectedAsset && (
-                  <div className="bg-[#1800ad]/5 p-4 rounded-[24px] border border-[#1800ad]/10 flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60">Generation Workspace</div>
-                        <div className="text-sm font-black text-[#1800ad]">{selectedAsset.title}</div>
-                      </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${selectedAsset.generation_status === 'ready' ? 'bg-emerald-100 text-emerald-800' : isGenerating ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-gray-100 text-gray-700'}`}>
-                        {selectedAsset.generation_status === 'ready' ? 'Ready' : isGenerating ? 'Generating...' : 'Not set up yet'}
-                      </span>
-                    </div>
-
-                    <textarea
-                      value={regenText}
-                      onChange={(e) => setRegenText(e.target.value)}
-                      rows={3}
-                      placeholder="Optional: add teacher notes, examples, or style guidance..."
-                      className="w-full bg-[#f6f4ee] text-[#1800ad] placeholder-[#1800ad]/40 border border-[#1800ad]/20 p-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#1800ad] resize-none"
-                    />
-
-                    {generationError && (
-                      <div className="text-[11px] font-bold text-rose-600">{generationError}</div>
-                    )}
-
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
-                        {isGenerating ? `Expected time left: ${Math.max(0, Math.ceil((generationEndsAt! - now) / 1000))}s` : 'Generation ETA depends on asset type'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {selectedAsset.asset_type === 'concept_video' && (
-                          <button
-                            type="button"
-                            onClick={() => openLibrary(selectedAsset)}
-                            disabled={isGenerating}
-                            className={`px-3.5 py-2 border rounded-full text-[11px] font-black flex items-center gap-1 leading-none transition-all ${isGenerating
-                                ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                : 'border-[#1800ad]/40 text-[#1800ad] hover:bg-[#1800ad]/5'
-                              }`}
-                            title="Pick from shared content library"
-                          >
-                            <Library size={11} /> Library
-                          </button>
-                        )}
-                        <button
-                          onClick={handleGenerateSelectedAsset}
-                          disabled={isGenerating}
-                          className="px-4 py-2 rounded-full bg-[#1800ad] text-[#f6f4ee] text-[11px] font-black uppercase tracking-widest flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {isGenerating ? 'Generating...' : selectedAsset.generation_status === 'ready' ? 'Regenerate' : 'Generate'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )
-                */}
+               {/* Content Section */}
+              {!['concept_video', 'simulation', 'three_d_model'].includes(activeAsset.asset_type) && (
+                <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad] border-b border-[#1800ad]/10 pb-2">
+                    Content
+                  </h3>
 
                 {isMinimalOrPlaceholder ? (
                   <p className="text-xs sm:text-sm text-[#1800ad]/60 font-semibold italic">
@@ -655,46 +651,25 @@ export function TeacherTopicSetupPage() {
                         ) : null}
                       </div>
                     )}
-
-                    {/* General payload fallback list for other asset types if any */}
-                    {/*
-                    !['quiz', 'explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
-                      <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
-                        {Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
-                          const val = activeAsset.payload_json[key];
-                          if (typeof val === 'object') return null;
-                          return (
-                            <div key={key} className="flex justify-between items-center border-b border-[#1800ad]/5 py-1">
-                              <span className="capitalize font-bold text-[#1800ad]/60">{key.replace('_', ' ')}:</span>
-                              <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )
-                    */}
                   </div>
                 )}
               </div>
+              )}
 
               {/* Embedded Viewport / Link Section */}
               {activeAsset.external_url && (
                 <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1800ad]/10 pb-2">
+                  <div className="border-b border-[#1800ad]/10 pb-2">
                     <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">
                       Interactive Live Preview
                     </h3>
-                    <a
-                      href={activeAsset.external_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-[#1800ad] hover:underline flex items-center gap-1"
-                    >
-                      Open in new tab &rarr;
-                    </a>
                   </div>
 
-                  <div className="w-full bg-[#1800ad]/5 rounded-2xl overflow-hidden relative border-2 border-[#1800ad] shadow-inner animate-fadeIn" style={{ height: '450px' }}>
+                  <div 
+                    className={`w-full bg-[#1800ad]/5 rounded-2xl overflow-hidden relative border-2 border-[#1800ad] shadow-inner animate-fadeIn transition-all duration-300 ${
+                      activeAsset.asset_type === 'simulation' ? 'h-[750px] sm:h-[850px] md:h-[900px] lg:h-[950px]' : 'h-[450px]'
+                    }`}
+                  >
                     {activeAsset.asset_type === 'concept_video' ? (
                       activeAsset.external_url.includes('youtube.com') || activeAsset.external_url.includes('youtu.be') ? (
                         <iframe
@@ -715,7 +690,8 @@ export function TeacherTopicSetupPage() {
                         src={activeAsset.external_url}
                         title="Simulation Embed"
                         allowFullScreen
-                        className="w-full h-full border-0"
+                        scrolling="no"
+                        className="w-full h-full border-0 overflow-hidden"
                         style={{ background: '#ffffff' }}
                       />
                     ) : activeAsset.asset_type === 'three_d_model' ? (
@@ -967,7 +943,7 @@ export function TeacherTopicSetupPage() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 20 }}
               onClick={e => e.stopPropagation()}
-              className="bg-[#f6f4ee] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-montserrat"
+              className="bg-[#fbfaf6] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden font-montserrat"
             >
               {/* Header */}
               <div className="flex items-start justify-between p-7 pb-4 border-b border-[#1800ad]/15 shrink-0">
