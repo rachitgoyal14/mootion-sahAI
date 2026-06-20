@@ -310,17 +310,34 @@ def _refresh_assignment_status(db: Session, assignment_id: str) -> None:
 
     # If there are no jobs, assignment status is ready (if content is ready, or can be built)
     if not jobs:
-        # If content is still placeholder, try to build from ready assets.
-        if _is_content_placeholder(assignment.content_json):
+        if assignment.assignment_type in INTERACTIVE_ASSIGNMENT_TYPES:
+            assignment.status = "ready"
+            if _is_content_placeholder(assignment.content_json):
+                chapter_obj = get_chapter(db, str(assignment.chapter_id))
+                topics = get_topics_for_chapter(db, str(assignment.chapter_id))
+                topic_list = []
+                for t in topics:
+                    snippet = (t.source_text or "")[:300] if t.source_text else ""
+                    topic_list.append({
+                        "title": t.title,
+                        "source_snippet": snippet,
+                    })
+                assignment.content_json = {
+                    "placeholder": False,
+                    "assignment_type": assignment.assignment_type,
+                    "activity": assignment.assignment_type,
+                    "chapter_id": str(assignment.chapter_id) if assignment.chapter_id else "",
+                    "chapter_title": chapter_obj.title if chapter_obj else "",
+                    "topics": topic_list,
+                }
+        elif _is_content_placeholder(assignment.content_json):
             new_content = _build_content_json_from_chapter(db, str(assignment.chapter_id), assignment.assignment_type)
             if new_content:
                 assignment.content_json = new_content
                 assignment.status = "ready"
             else:
-                # No ready asset found – keep queued
                 assignment.status = "queued"
         else:
-            # Already has content, keep ready
             assignment.status = "ready"
         db.commit()
         return

@@ -272,8 +272,8 @@ Provide helpful, encouraging, and concise answers related to their current task.
 });
 
 app.post("/api/evaluate-session", async (req, res) => {
+  const { task, activityName, transcript, predictionOutcome } = req.body;
   try {
-    const { task, activityName, transcript, predictionOutcome } = req.body;
     if (!task || !activityName || !transcript) {
       return res.status(400).json({ error: "Missing required parameters." });
     }
@@ -284,9 +284,9 @@ app.post("/api/evaluate-session", async (req, res) => {
         understandingScore: 88,
         expressionScore: 92,
         reasoningScore: 85,
-        strengths: ["Highly active participant", "Understood volume and density correlation"].map(s => cleanText(s)),
-        gaps: ["Can explore buoyant forces in deeper levels"].map(g => cleanText(g)),
-        feedback: cleanText("Wow! You explained the physics concepts so clearly to me! I loved acting as your 10-year-old student. Thank you for teaching me so much about buoyancy today!"),
+        strengths: ["Highly active participant", "Showed good understanding of the material"].map(s => cleanText(s)),
+        gaps: ["Can explore concepts in deeper levels"].map(g => cleanText(g)),
+        feedback: cleanText(`Wow! You explained the concepts so clearly to me! I loved acting as your 10-year-old student. Thank you for teaching me so much about ${task.topic || "this topic"} today!`),
         predictionAccuracy: "Correct"
       });
     }
@@ -333,8 +333,8 @@ Make sure that you strictly output the JSON structure without any formatting pre
       expressionScore: 90,
       reasoningScore: 88,
       strengths: ["Engaged beautifully in explaining concepts"].map(s => cleanText(s)),
-      gaps: ["Could formalize the buoyancy equation definitions"].map(g => cleanText(g)),
-      feedback: cleanText("That was incredible! Your scientific breakdown was so easy for a kid like me to understand. Thanks for explaining buoyancy to me!"),
+      gaps: ["Could explore the topic with more structured explanations"].map(g => cleanText(g)),
+      feedback: cleanText(`That was incredible! Your explanation was so easy for a kid like me to understand. Thanks for teaching me about ${task.topic || "this topic"}!`),
       predictionAccuracy: "Correct"
     });
   }
