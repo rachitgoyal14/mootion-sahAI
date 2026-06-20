@@ -78,13 +78,18 @@ async function generateContentWithFallback(params: {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, context } = req.body;
+    const { message, context, lang } = req.body;
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.trim() === "") {
+      if (lang === 'hi') {
+        return res.json({
+          text: cleanText("नमस्ते! मैं मूटिशन हूँ, आपका विज्ञान अध्ययन भागीदार! मेरी वास्तविक समय की एआई क्षमताओं को अनलॉक करने के लिए, कृपया एआई स्टूडियो में सेटिंग्स के तहत सीक्रेट्स पैनल में एक वैध `GEMINI_API_KEY` कॉन्फ़िगर करें। इस बीच, मैं आपके लिए स्थानीय उपकरण, ड्राइंग अभ्यास और कस्टम सिमुलेशन चलाने के लिए तैयार हूँ!")
+        });
+      }
       return res.json({ 
         text: cleanText("Hello! I'm Mootion, your science study partner! To unlock my real-time AI capabilities, please configure a valid `GEMINI_API_KEY` in the Secrets panel under Settings in AI Studio. In the meantime, I'm ready to run local tools, drawing exercises, and custom simulations for you!") 
       });
@@ -92,6 +97,9 @@ app.post("/api/chat", async (req, res) => {
 
     let systemInstruction = "You are a helpful study assistant for a student platform called Mootion. Answer questions concisely, professionally, and cheerfully. CRITICAL: Do NOT use any emojis in your response under any circumstances. Keep the response completely emoji-free.";
     if (context) systemInstruction += `\nContext: ${context}`;
+    if (lang === 'hi') {
+      systemInstruction += "\nCRITICAL: The user has selected Hindi language preference. You MUST answer the user in Hindi (हिन्दी) only. Do NOT use English to answer, even if the user asks their question in English. Respond entirely in Hindi.";
+    }
 
     const response = await generateContentWithFallback({
       contents: message,
@@ -101,6 +109,11 @@ app.post("/api/chat", async (req, res) => {
     res.json({ text: cleanText(response.text || "") });
   } catch (error: any) {
     console.error("Chat API Error:", error);
+    if (req.body.lang === 'hi') {
+      return res.json({
+        text: cleanText("मुझे कनेक्शन की थोड़ी समस्या हो रही है, लेकिन चिंता न करें! सुनिश्चित करें कि आपका GEMINI_API_KEY आपके एआई स्टूडियो के सीक्रेट्स पैनल में कॉन्फ़िगर किया गया है। इस बीच इंटरैक्टिव सिमुलेशन, ड्राइंग बोर्ड और टास्क वर्कस्पेस का उपयोग करने के लिए स्वतंत्र महसूस करें!")
+      });
+    }
     res.json({ 
       text: cleanText("I'm having a brief connection issue, but don't worry! Ensure your GEMINI_API_KEY is configured in the Secrets panel of your AI Studio. Feel free to use the interactive simulation, drawing board, and tasks workspace in the meantime!") 
     });
@@ -272,8 +285,8 @@ Provide helpful, encouraging, and concise answers related to their current task.
 });
 
 app.post("/api/evaluate-session", async (req, res) => {
+  const { task, activityName, transcript, predictionOutcome } = req.body;
   try {
-    const { task, activityName, transcript, predictionOutcome } = req.body;
     if (!task || !activityName || !transcript) {
       return res.status(400).json({ error: "Missing required parameters." });
     }
@@ -284,9 +297,9 @@ app.post("/api/evaluate-session", async (req, res) => {
         understandingScore: 88,
         expressionScore: 92,
         reasoningScore: 85,
-        strengths: ["Highly active participant", "Understood volume and density correlation"].map(s => cleanText(s)),
-        gaps: ["Can explore buoyant forces in deeper levels"].map(g => cleanText(g)),
-        feedback: cleanText("Wow! You explained the physics concepts so clearly to me! I loved acting as your 10-year-old student. Thank you for teaching me so much about buoyancy today!"),
+        strengths: ["Highly active participant", "Showed good understanding of the material"].map(s => cleanText(s)),
+        gaps: ["Can explore concepts in deeper levels"].map(g => cleanText(g)),
+        feedback: cleanText(`Wow! You explained the concepts so clearly to me! I loved acting as your 10-year-old student. Thank you for teaching me so much about ${task.topic || "this topic"} today!`),
         predictionAccuracy: "Correct"
       });
     }
@@ -333,8 +346,8 @@ Make sure that you strictly output the JSON structure without any formatting pre
       expressionScore: 90,
       reasoningScore: 88,
       strengths: ["Engaged beautifully in explaining concepts"].map(s => cleanText(s)),
-      gaps: ["Could formalize the buoyancy equation definitions"].map(g => cleanText(g)),
-      feedback: cleanText("That was incredible! Your scientific breakdown was so easy for a kid like me to understand. Thanks for explaining buoyancy to me!"),
+      gaps: ["Could explore the topic with more structured explanations"].map(g => cleanText(g)),
+      feedback: cleanText(`That was incredible! Your explanation was so easy for a kid like me to understand. Thanks for teaching me about ${task.topic || "this topic"}!`),
       predictionAccuracy: "Correct"
     });
   }
@@ -533,9 +546,18 @@ async function startServer() {
         return;
       }
 
-      let systemInstruction = "You are Mootion, a friendly and helpful AI study assistant. The student is doing an educational activity. Ask guiding questions, evaluate their understanding, and give helpful feedback. Keep your responses conversational and brief.";
+      let systemInstruction = `You are an expert, empathetic, and highly engaging tutor. Your goal is to help the user learn and deeply understand the topics they ask about, rather than just giving them answers.
+Follow these core behaviors:
+1. Be Conversational & Natural: Speak like a friendly human mentor. Use natural phrasing, occasional conversational fillers, and keep your tone encouraging.
+2. Socratic Method: Do not just give away the final answer. Ask guiding questions to help the user arrive at the conclusion themselves. 
+3. Bite-Sized Information: Deliver information in small, digestible chunks. Check for understanding before moving on. NEVER ask multiple consecutive questions! Ask ONLY ONE question at a time.
+4. Adapt to the User: If the user is struggling, simplify the analogy. If they grasp it quickly, move to more advanced nuances. 
+5. Use Vivid Analogies: Tie complex concepts to everyday, relatable scenarios.
+
+Never break character. Never refer to yourself as an AI. You are a mentor having a fluid, real-time spoken conversation.`;
+
       if (activity === "Explain It") {
-        systemInstruction = `You are Mootion, a curious 10-year-old child who loves building blocks and is super amazed to learn. The user is your teacher explaining the topic: '${topic}' under subject '${subject}'. Act completely amazed, and ask naive but clever questions to challenge the teacher's explanation! Keep answers brief, conversational, and charming. Make sure you sound like a 10-year-old child.`;
+        systemInstruction += `\n\nActivity context: The user is explaining '${topic}' under subject '${subject}'. Wait for them to explain. Follow up on their explanation by counter-questioning them asking ONE of "what", "why", or probing deeper into their logic. Ask ONE challenging but concise question at a time.`;
       } else if (activity === "Predict It") {
         systemInstruction = `You are Mootion, a friendly and playful 10-year-old. You are doing a prediction game / dynamic simulation about: '${topic}'. The actual outcome is that the solid stone sank to the bottom while the wood block floated. Talk with the user and ask them why water density differences make objects sink or float! Sound like a smart 10-year-old child.`;
       } else if (activity === "Spot It") {

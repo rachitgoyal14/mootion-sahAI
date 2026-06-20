@@ -9,6 +9,11 @@ class StudentAttemptSubmitRequest(BaseModel):
     language: str = "english"
 
 
+class QuizSubmitRequest(BaseModel):
+    score: int
+    total_questions: int
+
+
 class StudentAttemptResponse(BaseModel):
     attempt_id: str
     score_understanding: int
@@ -78,3 +83,13 @@ class ClassAnalyticsOverview(BaseModel):
     most_common_misconception: str | None
     misconception_count: int
     recent_activities: list[dict[str, Any]]
+
+# ─── Activity Calendar ─────────────────────────────────────────────────────
+
+class ActivityCalendarDay(BaseModel):
+    date: str          # ISO format YYYY-MM-DD
+    value: int         # number of activities on that day
+
+
+class ActivityCalendarResponse(BaseModel):
+    days: list[ActivityCalendarDay]

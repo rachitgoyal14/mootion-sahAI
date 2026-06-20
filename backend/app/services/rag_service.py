@@ -17,9 +17,15 @@ _BIOLOGY_ALIASES = {"biology", "bio", "life science", "life sciences"}
 _SUBJECT_FALLBACK_ORDER = ["science", "biology", "chemistry", "physics"]
 
 
-def _get_azure_client() -> AzureOpenAI:
-    if not settings.azure_openai_endpoint or not settings.azure_openai_api_key:
-        raise RuntimeError("Azure OpenAI is not configured")
+def _is_azure_configured() -> bool:
+    """Check if Azure OpenAI credentials are available."""
+    return bool(settings.azure_openai_endpoint and settings.azure_openai_api_key)
+
+
+def _get_azure_client() -> AzureOpenAI | None:
+    """Return an AzureOpenAI client if configured, otherwise None."""
+    if not _is_azure_configured():
+        return None
 
     endpoint = settings.azure_openai_endpoint.rstrip("/")
     if endpoint.endswith("/openai/v1"):
@@ -27,11 +33,14 @@ def _get_azure_client() -> AzureOpenAI:
     elif endpoint.endswith("/openai"):
         endpoint = endpoint[:-7]
 
-    return AzureOpenAI(
-        api_version=settings.azure_openai_api_version,
-        azure_endpoint=endpoint,
-        api_key=settings.azure_openai_api_key,
-    )
+    try:
+        return AzureOpenAI(
+            api_version=settings.azure_openai_api_version,
+            azure_endpoint=endpoint,
+            api_key=settings.azure_openai_api_key,
+        )
+    except Exception:
+        return None
 
 
 def _normalize_subject(subject: str, grade_num: int) -> str:
@@ -104,11 +113,19 @@ def _candidate_collection_names(grade: str, subject: str) -> list[str]:
 
 
 def retrieve_context(query: str, grade: str | None, subject: str | None, limit: int = 5) -> str:
+    """
+    Retrieve relevant context from ChromaDB for the given query, grade, and subject.
+    Returns an empty string on any failure (missing collection, connection error, no Azure, etc.)
+    """
     if not query or not query.strip():
         return ""
 
     if not grade or not subject:
         print(f"[rag-service] grade='{grade}' subject='{subject}' — skipping RAG (no context).")
+        return ""
+
+    if not _is_azure_configured():
+        print("[rag-service] Azure OpenAI not configured – skipping RAG.")
         return ""
 
     # Get absolute path to backend/chroma_db
@@ -144,8 +161,12 @@ def retrieve_context(query: str, grade: str | None, subject: str | None, limit: 
     print(f"[rag-service] Using collection '{used_collection_name}' for grade='{grade}' subject='{subject}'")
 
     try:
-        # Generate embedding for the query using Azure OpenAI
         client = _get_azure_client()
+        if client is None:
+            print("[rag-service] Failed to initialize Azure OpenAI client – skipping RAG.")
+            return ""
+
+        # Generate embedding for the query using Azure OpenAI
         embed_res = client.embeddings.create(
             input=[query],
             model="text-embedding-3-small",
