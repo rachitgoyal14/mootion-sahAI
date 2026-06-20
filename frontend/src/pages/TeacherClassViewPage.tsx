@@ -113,11 +113,11 @@ export function TeacherClassViewPage() {
             return true;
           }
 
-          // 2. Science fallback match for grades 5-10
+          // 2. Science fallback match for grades 6-10
           const numericGrade = parseInt(targetGradeNormalized, 10);
           if (
             !isNaN(numericGrade) &&
-            numericGrade >= 5 &&
+            numericGrade >= 6 &&
             numericGrade <= 10 &&
             classGradeNormalized === targetGradeNormalized
           ) {
@@ -251,7 +251,7 @@ export function TeacherClassViewPage() {
             }
           }} 
         />
-        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
+        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(`/teacher/analytics/${resolvedClass?.class_id || resolvedClass?.id || id}`)} />
         <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
       </nav>
 
@@ -274,7 +274,7 @@ export function TeacherClassViewPage() {
               }
             }} 
           />
-          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
+          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(`/teacher/analytics/${resolvedClass?.class_id || resolvedClass?.id || id}`)} />
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
 

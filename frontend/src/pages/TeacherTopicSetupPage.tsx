@@ -18,10 +18,22 @@ import {
   X,
   Zap,
   Clock,
-  Play
+  Play,
+  HelpCircle,
+  Sliders,
+  AlertCircle,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
+const INTERACTIVE_ASSIGNMENT_TYPES = [
+  { type: 'explain_ai', label: 'Explain It', icon: 'HelpCircle', desc: 'Student explains a topic to a curious 10-year-old AI, testing their understanding through teaching.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
+  { type: 'predict_ai', label: 'Predict It', icon: 'Sliders', desc: 'Student predicts outcomes of scientific experiments before seeing the result, building hypothesis skills.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+  { type: 'spot_it', label: 'Spot It', icon: 'AlertCircle', desc: 'Student identifies real-world applications of scientific concepts through riddles and scenarios.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { type: 'interactive_quiz', label: 'Interactive Quiz', icon: 'HelpCircle', desc: 'Timed interactive quiz that tests knowledge with engaging multiple-choice questions.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+];
+
 export const getSketchfabEmbedUrl = (url: string | null | undefined): string => {
   if (!url) return '';
   if (url.includes('/embed')) return url;
@@ -68,6 +80,8 @@ export function TeacherTopicSetupPage() {
     }
     return null;
   });
+  const [interactiveStatuses, setInteractiveStatuses] = useState<Record<string, 'idle' | 'generating' | 'ready' | 'failed'>>({});
+  const [interactiveErrors, setInteractiveErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const fetchTeacherProfile = async () => {
@@ -144,7 +158,7 @@ export function TeacherTopicSetupPage() {
             const numericGrade = parseInt(targetGradeNormalized, 10);
             if (
               !isNaN(numericGrade) &&
-              numericGrade >= 5 &&
+              numericGrade >= 6 &&
               numericGrade <= 10 &&
               classGradeNormalized === targetGradeNormalized &&
               classSubjectNormalized === 'science' &&
@@ -298,6 +312,7 @@ export function TeacherTopicSetupPage() {
   };
 
   const [regenText, setRegenText] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
   const [generationEndsAt, setGenerationEndsAt] = useState<number | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -339,6 +354,7 @@ export function TeacherTopicSetupPage() {
     try {
       const response = await api.post(`/teachers/classes/${classId}/chapters/${chapterId}/topics/${activeTopic.topic_id}/assets/${selectedAsset.asset_id}/generate`, {
         instructions: regenText.trim() || null,
+        language: selectedLanguage,
       });
       const generatedAsset = response.asset || response;
       updateTopicAsset(generatedAsset);
@@ -363,7 +379,7 @@ export function TeacherTopicSetupPage() {
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
           <NavItem icon={<BookOpen size={24} />} active onClick={() => navigate(`/teacher/class/${classId}`)} />
-          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/teacher/analytics')} />
+          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(classId ? `/teacher/analytics/${classId}` : '/teacher/analytics')} />
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
 
@@ -452,6 +468,66 @@ export function TeacherTopicSetupPage() {
                   <p className="text-xs sm:text-sm text-[#1800ad]/80 font-semibold mt-2 leading-relaxed">
                     {activeAsset.description}
                   </p>
+                  <textarea
+                    value={regenText}
+                    onChange={(e) => setRegenText(e.target.value)}
+                    rows={3}
+                    placeholder="Optional: add teacher notes, examples, or style guidance..."
+                    className="w-full bg-[#f6f4ee] text-[#1800ad] placeholder-[#1800ad]/40 border border-[#1800ad]/20 p-3 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#1800ad] resize-none"
+                  />
+
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
+                      Target Video/Audio Language
+                    </label>
+                    <select
+                      value={selectedLanguage}
+                      onChange={(e) => setSelectedLanguage(e.target.value)}
+                      className="bg-[#f6f4ee] text-[#1800ad] text-xs font-bold border border-[#1800ad]/20 px-3 py-1.5 rounded-xl outline-none focus:border-[#1800ad] cursor-pointer"
+                    >
+                      <option value="english">English</option>
+                      <option value="hindi">Hindi (हिंदी)</option>
+                      <option value="gujarati">Gujarati (ગુજરાતી)</option>
+                      <option value="marathi">Marathi (मराठी)</option>
+                      <option value="telugu">Telugu (తెలుగు)</option>
+                      <option value="tamil">Tamil (தமிழ்)</option>
+                      <option value="bengali">Bengali (বাংলা)</option>
+                    </select>
+                  </div>
+
+                  {generationError && (
+                    <div className="text-[11px] font-bold text-rose-600">{generationError}</div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
+                      {isGenerating ? `Expected time left: ${Math.max(0, Math.ceil((generationEndsAt! - now) / 1000))}s` : 'Generation ETA depends on asset type'}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedAsset.asset_type === 'concept_video' && (
+                        <button
+                          type="button"
+                          onClick={() => openLibrary(selectedAsset)}
+                          disabled={isGenerating}
+                          className={`px-3.5 py-2 border rounded-full text-[11px] font-black flex items-center gap-1 leading-none transition-all ${
+                            isGenerating
+                              ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'border-[#1800ad]/40 text-[#1800ad] hover:bg-[#1800ad]/5'
+                          }`}
+                          title="Pick from shared content library"
+                        >
+                          <Library size={11} /> Library
+                        </button>
+                      )}
+                      <button
+                        onClick={handleGenerateSelectedAsset}
+                        disabled={isGenerating}
+                        className="px-4 py-2 rounded-full bg-[#1800ad] text-[#f6f4ee] text-[11px] font-black uppercase tracking-widest flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isGenerating ? 'Generating...' : selectedAsset.generation_status === 'ready' ? 'Regenerate' : 'Generate'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <button
                   onClick={() => {
@@ -662,6 +738,92 @@ export function TeacherTopicSetupPage() {
                   </div>
                 </div>
               )}
+
+              {/* ─── Interactive Modes Section ─── */}
+              <div className="border-t-2 border-[#1800ad]/15 pt-6">
+                <h2 className="text-base font-black text-[#1800ad] tracking-tight mb-1">
+                  AI Interactive Modes
+                </h2>
+                <p className="text-[11px] font-semibold opacity-75 mb-4">
+                  Click any mode to generate and assign an AI-powered interactive activity to the class.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {INTERACTIVE_ASSIGNMENT_TYPES.map((mode) => {
+                    const status = interactiveStatuses[mode.type] || 'idle';
+                    const isGenerating = status === 'generating';
+                    const isReady = status === 'ready';
+                    const isFailed = status === 'failed';
+                    const errorMsg = interactiveErrors[mode.type];
+                    return (
+                      <div
+                        key={mode.type}
+                        className={`border-2 rounded-[20px] p-4 flex flex-col gap-3 transition-all ${
+                          isReady
+                            ? 'border-emerald-400 bg-emerald-50/50'
+                            : isFailed
+                            ? 'border-rose-300 bg-rose-50/50'
+                            : 'border-[#1800ad]/15 bg-[#f6f4ee] hover:border-[#1800ad]/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`p-2 rounded-xl ${isReady ? 'bg-emerald-500 text-white' : 'bg-[#1800ad]/5 text-[#1800ad] border border-[#1800ad]/15'}`}>
+                            {mode.icon === 'HelpCircle' && <HelpCircle size={16} />}
+                            {mode.icon === 'Sliders' && <Sliders size={16} />}
+                            {mode.icon === 'AlertCircle' && <AlertCircle size={16} />}
+                          </span>
+                          {isReady && (
+                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Assigned</span>
+                          )}
+                          {isFailed && (
+                            <span className="text-[10px] font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Failed</span>
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-black text-xs text-[#1800ad] mb-0.5">{mode.label}</h3>
+                          <p className="text-[10px] font-semibold text-[#1800ad]/70 leading-relaxed">{mode.desc}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isGenerating || isReady}
+                          onClick={async () => {
+                            if (isGenerating || isReady || !classId || !chapterId) return;
+                            setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'generating' }));
+                            setInteractiveErrors(prev => { const n = { ...prev }; delete n[mode.type]; return n; });
+                            try {
+                              await api.post(`/teachers/classes/${classId}/assignments`, {
+                                chapter_id: chapterId,
+                                assignment_type: mode.type,
+                                title: `${mode.label} - ${activeTopicTitle}`,
+                                instructions: null,
+                              });
+                              setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'ready' }));
+                            } catch (err: any) {
+                              setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'failed' }));
+                              setInteractiveErrors(prev => ({ ...prev, [mode.type]: err?.detail || err?.message || 'Failed to create assignment.' }));
+                            }
+                          }}
+                          className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                            isGenerating
+                              ? 'bg-amber-100 text-amber-700 cursor-not-allowed'
+                              : isReady
+                              ? 'bg-emerald-100 text-emerald-700 cursor-not-allowed'
+                              : 'bg-[#1800ad] text-[#f6f4ee] hover:bg-[#1800ad]/90 cursor-pointer'
+                          }`}
+                        >
+                          {isGenerating ? (
+                            <><div className="w-3.5 h-3.5 border-2 border-t-amber-700 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" /> Generating...</>
+                          ) : isReady ? (
+                            <><Check size={12} className="stroke-[3]" /> Assigned ✓</>
+                          ) : (
+                            <><Zap size={12} /> Generate & Assign</>
+                          )}
+                        </button>
+                        {errorMsg && <p className="text-[10px] font-bold text-rose-600">{errorMsg}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
             </div>
           )}

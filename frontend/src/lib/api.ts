@@ -45,7 +45,7 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
         localStorage.removeItem('mootion_access_token');
         localStorage.removeItem('mootion_refresh_token');
         if (typeof window !== 'undefined') {
-          window.location.href = role === 'teacher' ? '/teacher/login' : '/login';
+          window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
         }
         throw new ApiError(401, 'Unauthorized');
       }
@@ -74,7 +74,7 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
             localStorage.removeItem('mootion_access_token');
             localStorage.removeItem('mootion_refresh_token');
             if (typeof window !== 'undefined') {
-              window.location.href = role === 'teacher' ? '/teacher/login' : '/login';
+              window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
             }
             throw new ApiError(refreshRes.status, 'Unauthorized refresh');
           }
@@ -83,14 +83,14 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
           localStorage.removeItem('mootion_access_token');
           localStorage.removeItem('mootion_refresh_token');
           if (typeof window !== 'undefined') {
-            window.location.href = role === 'teacher' ? '/teacher/login' : '/login';
+            window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
           }
           throw err;
         }
       } else {
         localStorage.clear();
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          window.location.href = '/onboarding';
         }
         throw new ApiError(401, 'Unauthorized');
       }
@@ -154,7 +154,11 @@ export const api = {
     localStorage.removeItem('mootion_refresh_token');
     localStorage.removeItem('mootion_role');
     if (typeof window !== 'undefined') {
+<<<<<<< HEAD
       window.location.href = '/';
+=======
+      window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
+>>>>>>> 8040c42a3ccb6fd5eae56b9a0717b80aed1125dc
     }
   }
 };

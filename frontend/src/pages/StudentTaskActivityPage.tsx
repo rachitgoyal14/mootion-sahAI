@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -13,7 +13,7 @@ import { TASKS, Task } from '../data/tasks';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
 import { ChatbotFab } from '../components/ChatbotFab';
-import { LayoutDashboard, CheckSquare, Compass, Gamepad2 } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Compass, Gamepad2, BarChart2 } from 'lucide-react';
 
 // Import modular Teach AI activities and progress panels
 import { LiveVoiceActivity, AttemptHistoryPanel } from '../components/LiveVoiceActivity';
@@ -27,11 +27,34 @@ function QuizContent({ task }: { task: Task }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<any>(null);
+  const submitAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isSubmitted || submitting || submitAttemptedRef.current) return;
+    const dbTask = (task as any).dbTask;
+    if (!dbTask) return;
+    submitAttemptedRef.current = true;
+    let score = 0;
+    questions.forEach(q => { if (answers[q.id] === q.correctAnswer) score++; });
+    setSubmitting(true);
+    api.post(`/students/classes/${dbTask.class_id}/assignments/${dbTask.assignment_id}/submit-quiz`, {
+      score,
+      total_questions: questions.length
+    }).then(res => {
+      setSubmitResult(res);
+    }).catch(err => {
+      console.error("Failed to submit quiz score:", err);
+    }).finally(() => {
+      setSubmitting(false);
+    });
+  }, [isSubmitted, questions, answers, task]);
 
   useEffect(() => {
     // If it's a real backend task and we have quiz questions, use them!
     if ((task as any).dbTask) {
-      const mainJob = (task as any).dbTask.jobs?.find((j: any) => j.asset_type === 'quiz');
+      const mainJob = (task as any).dbTask.jobs?.find((j: any) => j.asset_type === 'quiz' || j.asset_type === 'interactive_quiz');
       const questionsData = mainJob?.result_json?.questions || mainJob?.result_json?.quiz || (task as any).dbTask.content_json?.quiz;
       if (questionsData && Array.isArray(questionsData)) {
         setQuestions(questionsData);
@@ -97,6 +120,7 @@ function QuizContent({ task }: { task: Task }) {
     questions.forEach(question => {
       if (answers[question.id] === question.correctAnswer) score++;
     });
+    const dbTask = (task as any).dbTask;
 
     return (
        <div className="flex flex-col items-center flex-1 mt-6 max-w-3xl mx-auto w-full">
@@ -107,8 +131,18 @@ function QuizContent({ task }: { task: Task }) {
             </div>
             <p className="font-bold text-[#1800ad]/70 mb-8">You answered {score} out of {questions.length} correctly.</p>
             
+            {dbTask && submitting && (
+              <p className="text-sm text-[#1800ad]/50 mb-4 animate-pulse">Submitting score...</p>
+            )}
+            {dbTask && submitResult && (
+              <p className="text-sm text-green-600 font-semibold mb-4">✓ Score saved to your analytics</p>
+            )}
+            {dbTask && !submitting && !submitResult && (
+              <p className="text-sm text-amber-600 font-semibold mb-4">⚠ Score could not be saved</p>
+            )}
+            
             <div className="flex gap-4 w-full">
-              <button onClick={() => { setIsSubmitted(false); setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
+              <button onClick={() => { setIsSubmitted(false); setSubmitResult(null); submitAttemptedRef.current = false; setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
                 Try Again
               </button>
             </div>
@@ -171,20 +205,39 @@ function QuizContent({ task }: { task: Task }) {
 
 function VideoSimulationContent({ task }: { task: Task }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const mainJob = (task as any).dbTask?.jobs?.[0];
-  const assetId = mainJob?.asset_id || task.id;
-  
-  const getBackendBaseUrl = () => {
-    if (typeof window !== 'undefined') {
-      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      return isLocalhost ? 'http://localhost:8000' : window.location.origin;
-    }
-    return 'http://localhost:8000';
-  };
-  
-  const mediaUrl = `${getBackendBaseUrl()}/media/assets/${assetId}`;
+
+  // ─── FIX: Prioritise content_json.external_url / embedUrl ──────────────
+  const dbTask = (task as any).dbTask;
+  const contentJson = dbTask?.content_json || {};
+
+  // If content_json provides a direct URL, use that
+  let mediaUrl: string | null = null;
+  if (contentJson.external_url) {
+    mediaUrl = contentJson.external_url;
+  } else if (contentJson.embedUrl) {
+    mediaUrl = contentJson.embedUrl;
+  }
+
+  // Fallback: old asset‑ID construction
+  if (!mediaUrl) {
+    const mainJob = dbTask?.jobs?.[0];
+    const assetId = mainJob?.asset_id || task.id;
+    const getBackendBaseUrl = () => {
+      if (typeof window !== 'undefined') {
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        return isLocalhost ? 'http://localhost:8000' : window.location.origin;
+      }
+      return 'http://localhost:8000';
+    };
+    mediaUrl = `${getBackendBaseUrl()}/media/assets/${assetId}`;
+  }
+
+  // For mock tasks (no dbTask) we use a sample video
+  const fallbackVideo = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+  const finalUrl = dbTask ? mediaUrl : fallbackVideo;
 
   const renderContent = (fullscreenMode = false) => {
+    // Simulation / 3D Model rendering
     if (task.type === 'Simulation' || task.typeLabel === '3D Model') {
       return (
         <div className={`w-full bg-white flex items-center justify-center relative flex-col shrink-0 ${
@@ -205,9 +258,9 @@ function VideoSimulationContent({ task }: { task: Task }) {
               </button>
             </div>
           )}
-          {(task as any).dbTask ? (
+          {dbTask ? (
             <iframe
-              src={mediaUrl}
+              src={finalUrl}
               title={task.topic}
               allowFullScreen
               className={`w-full h-full border-0 ${fullscreenMode ? 'pt-0' : 'pt-10'}`}
@@ -230,7 +283,7 @@ function VideoSimulationContent({ task }: { task: Task }) {
     }
 
     // Video
-    const videoSrc = (task as any).dbTask ? mediaUrl : "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+    const videoSrc = finalUrl;
     return (
       <div className={`w-full bg-black overflow-hidden relative shrink-0 font-montserrat font-semibold ${
         fullscreenMode 
@@ -250,7 +303,7 @@ function VideoSimulationContent({ task }: { task: Task }) {
           className="w-full h-full object-contain md:object-cover" 
           controls 
           src={videoSrc}
-          poster={!(task as any).dbTask ? "https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg" : undefined}
+          poster={!dbTask ? "https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg" : undefined}
         ></video>
       </div>
     );
@@ -378,6 +431,21 @@ export function StudentTaskActivityPage() {
     } else if (dbTask.assignment_type === 'model') {
       taskType = 'Simulation';
       typeLabel = '3D Model';
+    } else if (['explain_ai', 'EXPLAIN_IT', 'explain_it'].includes(dbTask.assignment_type)) {
+      taskType = 'Explain It';
+      typeLabel = 'Explain It';
+    } else if (['predict_ai', 'PREDICT_IT', 'predict_it'].includes(dbTask.assignment_type)) {
+      taskType = 'Predict It';
+      typeLabel = 'Predict It';
+    } else if (['spot_it', 'SPOT_IT'].includes(dbTask.assignment_type)) {
+      taskType = 'Spot It';
+      typeLabel = 'Spot It';
+    } else if (dbTask.assignment_type === 'connect_it') {
+      taskType = 'Connect It';
+      typeLabel = 'Connect It';
+    } else if (['interactive_quiz', 'INTERACTIVE_QUIZ'].includes(dbTask.assignment_type)) {
+      taskType = 'Interactive Quiz';
+      typeLabel = 'Interactive Quiz';
     }
 
     task = {
@@ -429,6 +497,16 @@ export function StudentTaskActivityPage() {
 
   const [activeActivity, setActiveActivity] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (task && ['Explain It', 'Predict It', 'Spot It', 'Connect It', 'Interactive Quiz'].includes(task.type)) {
+      if (task.type === 'Interactive Quiz') {
+        setActiveActivity(null);
+      } else {
+        setActiveActivity(task.type);
+      }
+    }
+  }, [task?.type]);
+
   if (loadingDbTask) {
     return (
       <div className="flex flex-1 w-full h-[100dvh] bg-[#f6f4ee] font-montserrat text-[#1800ad] flex-col items-center justify-center">
@@ -469,7 +547,8 @@ export function StudentTaskActivityPage() {
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
           <NavItem icon={<CheckSquare size={24} />} active={!isFromExplore} onClick={() => navigate('/student/tasks')} />
           <NavItem icon={<Compass size={24} />} active={isFromExplore} onClick={() => navigate('/student/explore')} />
-          <NavItem icon={<Gamepad2 size={24} />} />
+          <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
+          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>
         <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center group w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] relative">
            <span className="text-[#1800ad] font-bold text-lg">{studentName ? studentName[0].toUpperCase() : 'S'}</span>
@@ -513,9 +592,9 @@ export function StudentTaskActivityPage() {
                    <LiveVoiceActivity task={task} activityName="Connect It" instructions="Explain the relationship between concepts." onDone={() => setActiveActivity(null)} />
                  </motion.div>
                )}
-               {!activeActivity && (
-                 <motion.div key="default" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="h-full flex flex-col">
-                     {task.type === 'Quiz' ? <QuizContent task={task} /> : <VideoSimulationContent task={task} />}
+              {!activeActivity && (
+                  <motion.div key="default" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="h-full flex flex-col">
+                      {(task.type === 'Quiz' || task.type === 'Interactive Quiz') ? <QuizContent task={task} /> : <VideoSimulationContent task={task} />}
                      
                      {/* Multi-attempt logs & interactive teacher auditing board embedded cleanly right in the container flow */}
                      <AttemptHistoryPanel taskId={task.id} />

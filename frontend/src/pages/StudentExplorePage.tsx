@@ -6,7 +6,13 @@ import {
   Gamepad2,
   Search,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Atom,
+  FlaskConical,
+  Calculator,
+  Leaf,
+  Monitor,
+  BarChart2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -124,6 +130,12 @@ export function StudentExplorePage() {
             {studentName ? studentName[0].toUpperCase() : 'S'}
           </span>
         </div>
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-8 py-2.5 flex justify-between items-center z-40 rounded-full shadow-[0_10px_40px_rgba(24,0,173,0.25)] border-[2px] border-[#f6f4ee]">
+        <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
+        <NavItem icon={<CheckSquare size={24} />} onClick={() => navigate('/student/tasks')} />
+        <NavItem icon={<Compass size={24} />} active onClick={() => navigate('/student/explore')} />
+        <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
+        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
       </nav>
 
       {/* Sidebar - Desktop */}
@@ -136,6 +148,7 @@ export function StudentExplorePage() {
           <NavItem icon={<CheckSquare size={24} />} onClick={() => navigate('/student/tasks')} />
           <NavItem icon={<Compass size={24} />} active onClick={() => navigate('/student/explore')} />
           <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
+          <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>
         <div onClick={() => setIsLogoutModalOpen(true)} className="shrink-0 cursor-pointer flex items-center justify-center group w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] relative">
           <span className="text-[#1800ad] font-bold text-lg">{studentName ? studentName[0].toUpperCase() : 'S'}</span>

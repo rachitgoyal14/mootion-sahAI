@@ -21,6 +21,7 @@ from app.core.models import (
     TeacherClassMembership,
     StudentClassMembership,
     Chapter,
+    ChapterTopic,
 )
 from app.schemas.student_actions import (
     StudentAttemptResponse,
@@ -111,11 +112,23 @@ def submit_student_attempt(
     chapter = db.query(Chapter).filter(Chapter.id == assignment.chapter_id).first()
     chapter_title = chapter.title if chapter else "Science Topic"
 
+    chapter_topics = db.query(ChapterTopic).filter(ChapterTopic.chapter_id == assignment.chapter_id).order_by(ChapterTopic.sequence_number).all()
+    topic_context = ""
+    if chapter_topics:
+        topic_parts = []
+        for t in chapter_topics[:5]:
+            snippet = (t.source_text or "")[:200] if t.source_text else ""
+            topic_parts.append(f"- {t.title}: {snippet}" if snippet else f"- {t.title}")
+        topic_context = "Chapter Topics:\n" + "\n".join(topic_parts)
+
     # Call LLM Grader
     prompt = f"""
     You are an expert science teacher grading a student's verbal explanation of a concept.
     Concept / Topic: "{chapter_title}"
     Assignment Instructions: "{assignment.instructions or ''}"
+
+    {topic_context}
+
     Student Explanation (Speech Transcription): "{transcription_text}"
     Language used by student: {language}
 
@@ -137,26 +150,46 @@ def submit_student_attempt(
     """
 
     score_u, score_r, score_e = 0, 0, 0
-    feedback = "Failed to run grading. Please try again."
+    feedback = ""
 
-    try:
-        res = query_llm(prompt)
-        text = res.get("response", "").strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+    parsed_successfully = False
+    last_exception = None
 
-        data = json.loads(text)
-        score_u = int(data.get("score_understanding", 0))
-        score_r = int(data.get("score_reasoning", 0))
-        score_e = int(data.get("score_expression", 0))
-        feedback = str(data.get("ai_feedback", ""))
-    except Exception as e:
-        feedback = f"Grading completed with default fallback score. Details: {str(e)}"
-        # Mocks fallback in case of LLM parse failure
-        score_u, score_r, score_e = 2, 2, 2
+    for attempt_idx in range(3):
+        try:
+            res = query_llm(prompt)
+            text = res.get("response", "").strip()
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+            # Robust JSON extracting if there's surrounding text
+            cleaned = text
+            try:
+                data = json.loads(cleaned)
+            except Exception:
+                # Fallback to regex extract if LLM returned extra conversational text
+                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                if match:
+                    data = json.loads(match.group(0))
+                else:
+                    raise ValueError("No JSON object found in LLM response")
+
+            score_u = int(data.get("score_understanding"))
+            score_r = int(data.get("score_reasoning"))
+            score_e = int(data.get("score_expression"))
+            feedback = str(data.get("ai_feedback", ""))
+            parsed_successfully = True
+            break
+        except Exception as e:
+            last_exception = e
+
+    if not parsed_successfully:
+        # Graceful degradation: use default scores so analytics are never blocked by LLM failures
+        score_u, score_r, score_e = 1, 1, 1
+        feedback = "Your response was received. We could not generate detailed AI feedback at this time, but your attempt has been recorded."
 
     # Save Attempt
     attempt = StudentAttempt(
@@ -172,6 +205,38 @@ def submit_student_attempt(
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
+
+    # Dual-Write to ConceptScore
+    try:
+        from app.core.models import ConceptScore
+        existing_count = db.query(func.count(ConceptScore.id)).filter(
+            ConceptScore.student_id == student.id,
+            ConceptScore.chapter_id == assignment.chapter_id,
+            ConceptScore.class_id == assignment.class_id
+        ).scalar() or 0
+        attempt_number = existing_count + 1
+
+        clarity_score = float(score_e) * 10.0 / 3.0
+        accuracy_score = float(score_u) * 10.0 / 3.0
+        depth_score = float(score_r) * 10.0 / 3.0
+        overall_score = (clarity_score + accuracy_score + depth_score) / 3.0
+
+        concept_score = ConceptScore(
+            student_id=student.id,
+            chapter_id=assignment.chapter_id,
+            class_id=assignment.class_id,
+            transcript=transcription_text,
+            clarity_score=clarity_score,
+            accuracy_score=accuracy_score,
+            depth_score=depth_score,
+            overall_score=overall_score,
+            llm_feedback=feedback,
+            attempt_number=attempt_number
+        )
+        db.add(concept_score)
+        db.commit()
+    except Exception as dual_write_err:
+        print(f"[student_actions_service] Dual-write to ConceptScore failed: {dual_write_err}", flush=True)
 
     return StudentAttemptResponse(
         attempt_id=str(attempt.id),
@@ -554,6 +619,82 @@ def generate_playground_item(
 
 
 # --- ANALYTICS ENGINES ---
+
+def submit_quiz_attempt(
+    db: Session,
+    student: User,
+    assignment_id: str,
+    score: int,
+    total_questions: int,
+) -> StudentAttemptResponse:
+    recipient = db.query(AssignmentRecipient).filter(
+        AssignmentRecipient.assignment_id == assignment_id,
+        AssignmentRecipient.student_id == student.id,
+    ).first()
+    if not recipient:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this assignment.")
+
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+
+    pct = score / max(total_questions, 1)
+    derived = round(pct * 3)
+    feedback = f"You answered {score} out of {total_questions} correctly ({round(pct * 100)}%)."
+
+    attempt = StudentAttempt(
+        student_id=student.id,
+        assignment_id=assignment.id,
+        score_understanding=derived,
+        score_reasoning=derived,
+        score_expression=derived,
+        transcription_text=feedback,
+        ai_feedback=feedback,
+        attempt_language="english",
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    try:
+        from app.core.models import ConceptScore
+        existing_count = db.query(func.count(ConceptScore.id)).filter(
+            ConceptScore.student_id == student.id,
+            ConceptScore.chapter_id == assignment.chapter_id,
+            ConceptScore.class_id == assignment.class_id
+        ).scalar() or 0
+        attempt_number = existing_count + 1
+
+        clarity_score = float(derived) * 10.0 / 3.0
+        accuracy_score = float(derived) * 10.0 / 3.0
+        depth_score = float(derived) * 10.0 / 3.0
+        overall_score = (clarity_score + accuracy_score + depth_score) / 3.0
+
+        concept_score = ConceptScore(
+            student_id=student.id,
+            chapter_id=assignment.chapter_id,
+            class_id=assignment.class_id,
+            transcript=feedback,
+            clarity_score=clarity_score,
+            accuracy_score=accuracy_score,
+            depth_score=depth_score,
+            overall_score=overall_score,
+            llm_feedback=feedback,
+            attempt_number=attempt_number
+        )
+        db.add(concept_score)
+        db.commit()
+    except Exception as dual_write_err:
+        print(f"[student_actions_service] Dual-write to ConceptScore failed: {dual_write_err}", flush=True)
+
+    return StudentAttemptResponse(
+        attempt_id=str(attempt.id),
+        score_understanding=attempt.score_understanding,
+        score_reasoning=attempt.score_reasoning,
+        score_expression=attempt.score_expression,
+        ai_feedback=attempt.ai_feedback,
+    )
+
 
 def get_class_analytics_overview(db: Session, teacher: User, class_id: str) -> ClassAnalyticsOverview:
     # Verify access
