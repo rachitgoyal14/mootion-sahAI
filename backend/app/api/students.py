@@ -18,6 +18,7 @@ from app.schemas.student_actions import (
     PlaygroundGenerateRequest,
     PlaygroundGenerateResponse,
     StudentDoubtReplyRequest,
+    ActivityCalendarResponse,
 )
 from app.services.onboarding_service import join_student_class, list_student_classes, set_student_language
 from app.schemas.chapter import ChapterListItem, ChapterResponse
@@ -30,6 +31,7 @@ from app.services.student_actions_service import (
     resolve_student_doubt,
     student_reply_to_doubt,
     reopen_student_doubt,
+     get_student_activity_calendar,
 )
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -159,3 +161,20 @@ def student_chapter_detail(class_id: str, chapter_id: str, user=Depends(require_
     return get_class_chapter(db, user, class_id, chapter_id)
 
 
+# ─── Activity Calendar ─────────────────────────────────────────────────────
+
+@router.get("/activity/calendar", response_model=ActivityCalendarResponse)
+def get_activity_calendar(
+    year: int | None = None,
+    month: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_student),
+):
+    import datetime
+    now = datetime.datetime.now()
+    if year is None:
+        year = now.year
+    if month is None:
+        month = now.month
+    data = get_student_activity_calendar(db, user, year, month)
+    return ActivityCalendarResponse(days=data)

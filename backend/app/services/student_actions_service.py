@@ -907,3 +907,34 @@ def get_student_analytics_drill(
         "language_ratio": lang_ratio,
         "explain_excerpts": excerpts[:3],
     }
+
+def get_student_activity_calendar(db: Session, user: User, year: int, month: int) -> list[dict]:
+    """
+    Returns a list of {date: YYYY-MM-DD, value: count} for the given month.
+    Counts StudentAttempt submissions as activity.
+    """
+    from sqlalchemy import func, cast, Date
+    from app.core.models import StudentAttempt
+    from datetime import datetime
+
+    start_date = datetime(year, month, 1)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1)
+    else:
+        end_date = datetime(year, month + 1, 1)
+
+    results = (
+        db.query(
+            cast(StudentAttempt.created_at, Date).label('date'),
+            func.count(StudentAttempt.id).label('count')
+        )
+        .filter(
+            StudentAttempt.student_id == user.id,
+            StudentAttempt.created_at >= start_date,
+            StudentAttempt.created_at < end_date
+        )
+        .group_by('date')
+        .all()
+    )
+
+    return [{"date": r.date.isoformat(), "value": r.count} for r in results]
