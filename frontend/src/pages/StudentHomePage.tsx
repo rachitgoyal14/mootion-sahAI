@@ -78,29 +78,6 @@ const ASSIGNMENT_TYPE_LABELS: Record<string, string> = {
   model: '3D Model',
 };
 
-// ─── Calendar Data (decorative) ────────────────────────────────────────────
-
-const generateCalendarData = () => {
-  const data: { date: Date | null; value: number; dayNumber: number | null }[] = [];
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const startingDayOfWeek = firstDay.getDay();
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  for (let i = 0; i < startingDayOfWeek; i++) {
-    data.push({ date: null, value: -1, dayNumber: null });
-  }
-  for (let i = 1; i <= daysInMonth; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth(), i);
-    const isPastOrToday = d <= today;
-    const isActive = isPastOrToday && Math.random() > 0.6;
-    const value = isActive ? Math.floor(Math.random() * 4) + 1 : 0;
-    data.push({ date: d, value: isPastOrToday ? value : 0, dayNumber: i });
-  }
-  return data;
-};
-
-const calendarData = generateCalendarData();
-
 // ─── Component ────────────────────────────────────────────────────────────
 
 export function StudentHomePage() {
@@ -126,6 +103,10 @@ export function StudentHomePage() {
 
   // Student name
   const [studentName, setStudentName] = useState<string>('');
+
+  // ─── Calendar data ──────────────────────────────────────────────────────
+  const [calendarData, setCalendarData] = useState<{ date: Date | null; value: number; dayNumber: number | null }[]>([]);
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(true);
 
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -215,6 +196,56 @@ export function StudentHomePage() {
     };
     fetchChapters();
   }, [selectedClass]);
+
+  // ─── Fetch calendar data ──────────────────────────────────────────────
+  useEffect(() => {
+    const fetchCalendar = async () => {
+      setIsLoadingCalendar(true);
+      try {
+        const res = await api.get('/students/activity/calendar');
+        const days = res.days || [];
+        // Build a map: date string -> value
+        const map: Record<string, number> = {};
+        days.forEach((d: any) => { map[d.date] = d.value; });
+
+        // Build the 42-cell array for the current month
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const startingDayOfWeek = firstDay.getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const cells: { date: Date | null; value: number; dayNumber: number | null }[] = [];
+
+        // Empty cells before first day
+        for (let i = 0; i < startingDayOfWeek; i++) {
+          cells.push({ date: null, value: -1, dayNumber: null });
+        }
+
+        // Days of the month
+        for (let i = 1; i <= daysInMonth; i++) {
+          const d = new Date(year, month, i);
+          const dateStr = d.toISOString().split('T')[0];
+          const value = map[dateStr] || 0;
+          cells.push({ date: d, value, dayNumber: i });
+        }
+
+        // Pad remaining cells to complete 7-column grid (optional)
+        while (cells.length % 7 !== 0) {
+          cells.push({ date: null, value: -1, dayNumber: null });
+        }
+
+        setCalendarData(cells);
+      } catch (err) {
+        console.error('Failed to fetch calendar data:', err);
+        // Fallback to empty calendar
+        setCalendarData([]);
+      } finally {
+        setIsLoadingCalendar(false);
+      }
+    };
+    fetchCalendar();
+  }, []);
 
   // ── Up Next: top ready assignment by priority ──
   const readyAssignments = allAssignments.filter(a => a.status === 'ready');
@@ -541,29 +572,42 @@ export function StudentHomePage() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-[10px] md:text-xs font-bold text-[#1800ad]/60 mb-2 uppercase px-1">
-                    <span>{new Date().toLocaleString('default', { month: 'long' })}</span>
+                {isLoadingCalendar ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-8 h-8 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
                   </div>
-                  <div className="grid grid-cols-7 gap-1.5 md:gap-2">
-                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                      <div key={i} className="text-center text-[10px] font-bold text-[#1800ad]/60 mb-1">{day}</div>
-                    ))}
-                    {calendarData.map((day, i) =>
-                      day.value === -1 ? (
-                        <div key={i} className="aspect-square" />
+                ) : (
+                  <div>
+                    <div className="flex justify-between text-[10px] md:text-xs font-bold text-[#1800ad]/60 mb-2 uppercase px-1">
+                      <span>{new Date().toLocaleString('default', { month: 'long' })}</span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5 md:gap-2">
+                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                        <div key={i} className="text-center text-[10px] font-bold text-[#1800ad]/60 mb-1">{day}</div>
+                      ))}
+                      {calendarData.length === 0 ? (
+                        // Fallback if no data (should not happen)
+                        Array.from({ length: 35 }).map((_, i) => (
+                          <div key={i} className="aspect-square bg-[#1800ad]/10 rounded-sm" />
+                        ))
                       ) : (
-                        <div
-                          key={i}
-                          title={day.value > 0 ? `${day.value} activities` : 'No activity'}
-                          className={`aspect-square rounded-sm md:rounded-[4px] relative flex items-center justify-center ${getCellColor(day.value, day.date)} hover:ring-2 hover:ring-offset-1 hover:ring-[#1800ad]/50 transition-all cursor-pointer group/cell`}
-                        >
-                          <span className="text-[8px] sm:text-[10px] font-bold opacity-0 group-hover/cell:opacity-100 text-[#f6f4ee] bg-[#1800ad]/40 px-1 rounded-sm">{day.dayNumber}</span>
-                        </div>
-                      )
-                    )}
+                        calendarData.map((day, i) =>
+                          day.value === -1 ? (
+                            <div key={i} className="aspect-square" />
+                          ) : (
+                            <div
+                              key={i}
+                              title={day.value > 0 ? `${day.value} activities` : 'No activity'}
+                              className={`aspect-square rounded-sm md:rounded-[4px] relative flex items-center justify-center ${getCellColor(day.value, day.date)} hover:ring-2 hover:ring-offset-1 hover:ring-[#1800ad]/50 transition-all cursor-pointer group/cell`}
+                            >
+                              <span className="text-[8px] sm:text-[10px] font-bold opacity-0 group-hover/cell:opacity-100 text-[#f6f4ee] bg-[#1800ad]/40 px-1 rounded-sm">{day.dayNumber}</span>
+                            </div>
+                          )
+                        )
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex items-center justify-end gap-2 mt-6 text-xs font-medium text-[#1800ad]/70">
                   <div className="flex items-center gap-2">

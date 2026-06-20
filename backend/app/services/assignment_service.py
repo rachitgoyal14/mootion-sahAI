@@ -109,6 +109,22 @@ def _chapter_asset_to_job_response(job: ChapterAssetGenerationJob) -> Assignment
     )
 
 
+def _resolve_content_json_urls(content_json: dict) -> dict:
+    if not content_json:
+        return content_json
+    bucket = content_json.get("storage_bucket")
+    key = content_json.get("storage_key")
+    if bucket and key:
+        from app.services.media_service import build_playback_url
+        new_content = dict(content_json)
+        if "external_url" in new_content:
+            new_content["external_url"] = build_playback_url(bucket, key)
+        if "embedUrl" in new_content:
+            new_content["embedUrl"] = build_playback_url(bucket, key)
+        return new_content
+    return content_json
+
+
 def _assignment_to_response(db: Session, assignment: Assignment) -> AssignmentResponse:
     recipients = [
         AssignmentRecipientResponse(student_id=str(recipient.student_id))
@@ -122,7 +138,7 @@ def _assignment_to_response(db: Session, assignment: Assignment) -> AssignmentRe
         assignment_type=assignment.assignment_type,
         title=assignment.title,
         instructions=assignment.instructions,
-        content_json=assignment.content_json,
+        content_json=_resolve_content_json_urls(assignment.content_json),
         status=assignment.status,
         recipients=recipients,
         jobs=jobs,
@@ -246,15 +262,14 @@ def _is_content_placeholder(content_json: dict) -> bool:
     return True
 
 
-def _build_content_json_from_chapter(db: Session, chapter_id: str, assignment_type: str) -> dict | None:
+def _build_content_json_from_chapter(db: Session, chapter_id: str, assignment_type: str, class_id: str) -> dict | None:
     """Builds content_json from the newest ready asset (chapter or topic) of the matching type.
-    Returns None if no ready asset is found.
+    class_id is kept for interface consistency but not used directly (chapter_id is sufficient).
     """
     expected_asset_type = ASSIGNMENT_TYPE_TO_ASSET_TYPE.get(assignment_type)
     chapter_assets = get_assets_for_chapter(db, chapter_id)
     topics = get_topics_for_chapter(db, chapter_id)
 
-    # Collect all ready assets of the matching type
     ready_assets = []
     for asset in chapter_assets:
         if asset.generation_status != "ready":
@@ -291,9 +306,17 @@ def _build_content_json_from_chapter(db: Session, chapter_id: str, assignment_ty
     if asset.asset_type in ("quiz", "interactive_quiz"):
         content_json["quiz"] = (asset.payload_json or {}).get("quiz")
     elif asset.asset_type == "three_d_model":
-        content_json["embedUrl"] = asset.external_url
+        from app.services.media_service import resolve_asset_media_url
+        content_json["embedUrl"] = resolve_asset_media_url(asset)
+        if asset.storage_bucket and asset.storage_key:
+            content_json["storage_bucket"] = asset.storage_bucket
+            content_json["storage_key"] = asset.storage_key
     elif asset.asset_type in ("concept_video", "simulation"):
-        content_json["external_url"] = asset.external_url
+        from app.services.media_service import resolve_asset_media_url
+        content_json["external_url"] = resolve_asset_media_url(asset)
+        if asset.storage_bucket and asset.storage_key:
+            content_json["storage_bucket"] = asset.storage_bucket
+            content_json["storage_key"] = asset.storage_key
     else:
         payload = asset.payload_json or {}
         for key in ("system_prompt", "initial_question", "student_persona", "scenario"):
@@ -331,7 +354,12 @@ def _refresh_assignment_status(db: Session, assignment_id: str) -> None:
                     "topics": topic_list,
                 }
         elif _is_content_placeholder(assignment.content_json):
-            new_content = _build_content_json_from_chapter(db, str(assignment.chapter_id), assignment.assignment_type)
+            new_content = _build_content_json_from_chapter(
+                db,
+                str(assignment.chapter_id),
+                assignment.assignment_type,
+                str(assignment.class_id)
+            )
             if new_content:
                 assignment.content_json = new_content
                 assignment.status = "ready"
@@ -347,7 +375,12 @@ def _refresh_assignment_status(db: Session, assignment_id: str) -> None:
     if statuses <= {"ready"}:
         # All jobs are ready – update content if still placeholder
         if _is_content_placeholder(assignment.content_json):
-            new_content = _build_content_json_from_chapter(db, str(assignment.chapter_id), assignment.assignment_type)
+            new_content = _build_content_json_from_chapter(
+                db,
+                str(assignment.chapter_id),
+                assignment.assignment_type,
+                str(assignment.class_id)
+            )
             if new_content:
                 assignment.content_json = new_content
         assignment.status = "ready"
@@ -474,7 +507,7 @@ def _student_assignment_to_response(db: Session, assignment: Assignment) -> Stud
         assignment_type=assignment.assignment_type,
         title=assignment.title,
         instructions=assignment.instructions,
-        content_json=assignment.content_json,
+        content_json=_resolve_content_json_urls(assignment.content_json),
         status=assignment.status,
         jobs=jobs,
     )
@@ -870,6 +903,16 @@ def process_generation_job(db: Session, job: ChapterAssetGenerationJob) -> None:
         job.finished_at = datetime.now(timezone.utc)
         db.commit()
         return
+
+    # ─── GUARD: Skip generation if asset is already ready ──────────────
+    if asset.generation_status == "ready":
+        job.status = "ready"
+        job.error_message = "Superseded: asset already ready"
+        job.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        _refresh_assignment_status(db, str(job.assignment_id))
+        return
+    # ──────────────────────────────────────────────────────────────────────
 
     job.status = "processing"
     job.started_at = datetime.now(timezone.utc)
