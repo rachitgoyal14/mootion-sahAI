@@ -173,6 +173,7 @@ async def resolve_simulation(
         title = request.topic.title()
         # Find matching title in sims.json
         sims_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sims.json")
+        is_valid_match = True
         if os.path.exists(sims_file):
             try:
                 with open(sims_file, "r") as f:
@@ -182,17 +183,20 @@ async def resolve_simulation(
                         # Basic grade filtering if grade_level is provided and sim has grade_range
                         if request.grade_level and sim.get("grade_range"):
                             if request.grade_level not in sim["grade_range"]:
+                                is_valid_match = False
                                 continue
+                        is_valid_match = True
                         title = sim.get("title", title)
                         break
             except Exception as e:
                 print("Error loading sims.json in resolve:", e)
                 
-        return ResolveResponse(
-            type="phet",
-            url=phet_url,
-            title=title
-        )
+        if is_valid_match:
+            return ResolveResponse(
+                type="phet",
+                url=phet_url,
+                title=title
+            )
             
     # 2. AI generation fallback
     from app.core.config import settings

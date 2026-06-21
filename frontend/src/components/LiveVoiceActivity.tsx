@@ -199,7 +199,6 @@ export function LiveVoiceActivity({
     setMessages([
       { role: 'Mootion', text: initialGreeting }
     ]);
-    speakVoiceSynthesis(initialGreeting);
   }, [activityName, task]);
 
   useEffect(() => {
@@ -254,9 +253,6 @@ export function LiveVoiceActivity({
   }, []);
 
   const stopAllAudioDevices = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
     try {
       if (wsRef.current) {
         wsRef.current.close();
@@ -277,24 +273,7 @@ export function LiveVoiceActivity({
     }
   };
 
-  // Speaks using browser speech synthesis for captions + voice sync (fallback / high fidelity)
-  const speakVoiceSynthesis = (text: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("Skipping browser speech synthesis because dynamic Live WebSocket stream is open.");
-      return;
-    }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onstart = () => setAiIsSpeaking(true);
-      utterance.onend = () => setAiIsSpeaking(false);
-      utterance.onerror = () => setAiIsSpeaking(false);
-      
-      utterance.pitch = 1.35; // child-like friendly pitch
-      utterance.rate = 1.0;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+
 
   // Play incoming Base64 PCM audio chunk
   const playReturnedAudio = (base64Audio: string) => {
@@ -370,6 +349,10 @@ export function LiveVoiceActivity({
         nextStartTimeRef.current = currentTime; // Align to now if queue was silent
       }
 
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(e => console.warn("Failed to resume AudioContext", e));
+      }
+
       bufferSource.start(nextStartTimeRef.current);
       nextStartTimeRef.current += audioBuffer.duration;
 
@@ -408,6 +391,7 @@ export function LiveVoiceActivity({
       ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
+          console.log("[LiveVoiceActivity] Received msg from server proxy. Keys:", Object.keys(parsed));
           
           if (parsed.audio) {
             playReturnedAudio(parsed.audio);
@@ -448,6 +432,7 @@ export function LiveVoiceActivity({
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const actx = new AudioCtx();
       audioContextRef.current = actx;
+      nextStartTimeRef.current = 0;
 
       const source = actx.createMediaStreamSource(mstream);
       sourceRef.current = source;
@@ -611,7 +596,6 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
       setMessages(p => [...p, { role: 'Mootion' as const, text: mootionReply }]);
       setQuestionsAnswered(q => q + 1);
       setIsThinking(false);
-      speakVoiceSynthesis(mootionReply);
 
       // If we reached the end of the activity turns, trigger dynamic evaluation immediately
       if (isCurrentStepFinished) {
@@ -624,7 +608,6 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
       setIsThinking(false);
       const errReply = "My teddy and I are dizzy! Can you simplify that more?";
       setMessages(p => [...p, { role: 'Mootion' as const, text: errReply }]);
-      speakVoiceSynthesis(errReply);
     }
   };
 
@@ -731,7 +714,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
       setIsThinking(false);
 
       if (evalData.feedback) {
-        speakVoiceSynthesis(evalData.feedback);
+        setAiIsSpeaking(false);
       }
 
       // Save Attempt to localStorage history separating each attempt
@@ -861,207 +844,42 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
   if (activePlayState === 'grading' || evaluation) {
     if (isThinking) {
       return (
-        <div className="flex-1 w-full bg-[#1800ad] rounded-[32px] p-8 flex flex-col items-center justify-center relative shadow-xl overflow-hidden min-h-[500px]">
-          <div className="flex flex-col items-center gap-5 justify-center relative z-10 text-[#f6f4ee]">
-            <div className="relative flex items-center justify-center">
-              <span className="absolute animate-ping w-16 h-16 rounded-full bg-white/20"></span>
-              <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+        <div className="w-full bg-[#f6f4ee] rounded-[32px] py-12 px-8 flex flex-col items-center justify-center border-2 border-[#1800ad]/10 shadow-sm mx-auto max-w-xl my-8 h-fit">
+          <div className="flex flex-col items-center gap-5">
+            <div className="w-16 h-16 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <h2 className="text-lg font-black text-[#1800ad] animate-pulse">Analyzing Teacher-Student Transcript...</h2>
+              <p className="text-[10px] font-bold text-[#1800ad]/60 uppercase tracking-widest">Grading concepts, strengths and learning gaps</p>
             </div>
-            <h2 className="text-2xl font-black tracking-wide animate-pulse">Analyzing Teacher-Student Transcript...</h2>
-            <p className="text-white/60 text-xs font-semibold uppercase tracking-widest">Grading concepts, strengths and learning gaps</p>
           </div>
         </div>
       );
     }
 
-
+    const shortTopic = evaluation?.gaps && evaluation.gaps.length > 0 && evaluation.gaps[0].length < 30 ? evaluation.gaps[0] : null;
+    const nudgeText = shortTopic 
+      ? `A good next step: spend a bit more time exploring ${shortTopic.toLowerCase()}.` 
+      : `Keep practicing — you're building strong understanding!`;
 
     return (
-      <div className="flex-1 w-full bg-[#1800ad] rounded-[32px] p-6 md:p-8 flex flex-col items-center justify-center relative shadow-xl overflow-hidden min-h-[calc(100vh-80px)] md:min-h-0 md:h-full">
-        <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
-        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-blue-500/15 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
-
-        <button onClick={onDone} className="absolute top-6 right-6 text-white hover:opacity-75 transition-colors z-20">
-          <X size={26} className="stroke-[2.5]" />
-        </button>
-
-        <header className="text-center relative z-10 w-full max-w-2xl flex flex-col items-center gap-1 mt-4">
-          <div className="p-3 bg-emerald-500/25 text-emerald-300 rounded-full mb-2 shadow-lg">
-            <Award size={32} />
-          </div>
-          <h1 className="text-3xl md:text-5xl font-val text-white tracking-widest" style={{ textShadow: '3px 3px 0 #000' }}>
-            EVALUATION COMPLETE
-          </h1>
-          <h2 className="text-sm md:text-base font-bold text-white/80">{activityName} Log • {task.topic}</h2>
-        </header>
-
-        <div className="bg-white p-6 md:p-8 rounded-[28px] shadow-2xl w-full max-w-2xl flex flex-col gap-6 mt-6 relative z-10 border border-[#1800ad]/15 max-h-[60vh] overflow-y-auto custom-scrollbar">
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
-              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">Conceptual Understanding</span>
-              <span className="text-3xl font-black text-[#1800ad]">{evaluation?.understandingScore}%</span>
-              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
-                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.understandingScore}%` }}></div>
-              </div>
-            </div>
-
-            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
-              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">
-                {activityName === 'Explain It' ? 'Verbal Expression' : 'Scientific Reasoning'}
-              </span>
-              <span className="text-3xl font-black text-[#1800ad]">
-                {evaluation?.expressionScore || evaluation?.reasoningScore || 80}%
-              </span>
-              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
-                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.expressionScore || evaluation?.reasoningScore || 82}%` }}></div>
-              </div>
-            </div>
-          </div>
-
-
-
-          {evaluation?.feedback && (
-            <div className="bg-blue-50 border border-blue-100 rounded-[20px] p-4 flex items-start gap-3 text-left">
-              <span className="text-xl shrink-0">💬</span>
-              <div className="flex flex-col">
-                <span className="text-[11px] font-black text-[#1800ad]/60 uppercase tracking-wider">Mootion's Audit Report</span>
-                <p className="text-xs text-[#1800ad]/80 italic font-semibold leading-relaxed mt-1">
-                  "{evaluation.feedback}"
-                </p>
-              </div>
-            </div>
-          )}
-
-          {analyticsResult && (
-            <div className="bg-[#f0f4ff] border-2 border-[#1800ad]/20 rounded-[24px] p-5 flex flex-col gap-4 text-left shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">✨</span>
-                <span className="font-black text-xs text-[#1800ad] uppercase tracking-widest font-mono">
-                  Conceptual Explanation Evaluation (Attempt #{analyticsResult.attempt_number})
-                </span>
-              </div>
-              
-              <div className="flex flex-col gap-3">
-                {/* Clarity score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Clarity</span>
-                    <span>{analyticsResult.clarity_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.clarity_score > 7 ? 'bg-emerald-500' : analyticsResult.clarity_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.clarity_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Accuracy score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Accuracy</span>
-                    <span>{analyticsResult.accuracy_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.accuracy_score > 7 ? 'bg-emerald-500' : analyticsResult.accuracy_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.accuracy_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Depth score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Depth</span>
-                    <span>{analyticsResult.depth_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.depth_score > 7 ? 'bg-emerald-500' : analyticsResult.depth_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.depth_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-
-              {analyticsResult.llm_feedback && (
-                <div className="bg-white border border-[#1800ad]/10 rounded-xl p-3 text-xs text-[#1800ad]/80 leading-relaxed font-semibold">
-                  {analyticsResult.llm_feedback}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => navigate('/student/analytics')}
-                className="w-full py-2.5 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full font-black text-xs uppercase tracking-wider shadow transition-all hover:scale-101 active:scale-99"
-              >
-                View Full Analytics
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-4 text-left">
-            <div className="flex flex-col gap-2">
-              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                Key Conceptual Strengths
-              </h5>
-              <div className="flex flex-wrap gap-1.5">
-                {evaluation?.strengths?.map((str, idx) => (
-                  <span key={idx} className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-3 py-1 font-bold text-xs rounded-full">
-                    {str}
-                  </span>
-                )) || <span className="text-xs text-gray-500">No strengths logged.</span>}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 mt-1">
-              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
-                <Target size={14} className="text-amber-500" />
-                Gaps & Misconceptions Detected
-              </h5>
-              <div className="flex flex-col gap-1.5">
-                {evaluation?.gaps?.map((gap, idx) => (
-                  <div key={idx} className="bg-amber-50 text-amber-950 border border-amber-100 px-3 py-2 font-semibold text-xs rounded-xl flex items-start gap-1.5">
-                    <span className="text-xs text-amber-600 mt-0.5">•</span>
-                    <span>{gap}</span>
-                  </div>
-                )) || <p className="text-xs font-bold text-emerald-600 bg-emerald-50 p-3 rounded-xl w-full text-center">Perfect understanding! No learning gaps detected.</p>}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-[#1800ad]/10">
-            <button 
-              type="button"
-              onClick={() => {
-                setEvaluation(null);
-                setAnalyticsResult(null);
-                setMessages([{ role: 'Mootion', text: `Let's practice again! Let's explain ${task.topic} once and see if we can do even better!` }]);
-                setQuestionsAnswered(0);
-                setActivePlayState('explaining');
-              }} 
-              className="px-5 py-2.5 rounded-full font-bold border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors text-xs"
-            >
-              Try Again
-            </button>
-            <button 
-              type="button"
-              onClick={onDone} 
-              className="px-5 py-2.5 rounded-full font-bold bg-[#1800ad] text-white hover:bg-[#1800ad]/90 transition-colors shadow-md text-xs"
-            >
-              Completed Done
-            </button>
-          </div>
+      <div className="w-full bg-[#f6f4ee] rounded-[32px] p-8 md:p-12 flex flex-col items-center justify-center border-2 border-[#1800ad]/10 shadow-sm mx-auto max-w-xl my-8 h-fit">
+        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-200">
+          <CheckCircle2 size={32} className="stroke-[2.5]" />
         </div>
+        
+        <h2 className="text-2xl font-black text-[#1800ad] mb-2 text-center">Thanks for completing this task!</h2>
+        <h3 className="text-lg font-bold text-[#1800ad]/80 mb-4 text-center">You did well!</h3>
+        
+        <p className="text-sm font-semibold text-[#1800ad]/60 mb-8 text-center max-w-md leading-relaxed">
+          {nudgeText}
+        </p>
+
+        <button
+          onClick={() => navigate('/student/playground')}
+          className="px-8 py-3.5 bg-[#1800ad] text-white rounded-full font-black text-sm hover:bg-[#1800ad]/90 transition-all shadow-md active:scale-95"
+        >
+          Go to Playground
+        </button>
       </div>
     );
   }

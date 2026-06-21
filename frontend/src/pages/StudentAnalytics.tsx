@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   CheckSquare, 
-  Compass, 
   Gamepad2, 
   BarChart2, 
   ArrowLeft,
@@ -201,7 +200,7 @@ export function StudentAnalytics() {
             <>
               <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
               <NavItem icon={<CheckSquare size={24} />} onClick={() => navigate('/student/tasks')} />
-              <NavItem icon={<Compass size={24} />} onClick={() => navigate('/student/explore')} />
+
               <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
               <NavItem icon={<BarChart2 size={24} />} active onClick={() => navigate('/student/analytics')} />
             </>

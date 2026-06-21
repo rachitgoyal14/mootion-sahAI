@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   LayoutDashboard, 
   CheckSquare, 
-  Compass, 
   Gamepad2, 
   Search, 
   ArrowRight,
@@ -2099,31 +2098,13 @@ export function StudentPlaygroundPage() {
       const result = await api.post('/ocr/extract-text', formData);
       const extractedText = result.text || '';
       if (extractedText) {
-        const newVal = textInput ? `${textInput} ${extractedText}` : extractedText;
-        setTextInput(newVal);
-        setTimeout(() => focusAndMoveCursorToEnd(newVal), 100);
+        setNewDoubtDescription(prev => prev ? `${prev}\n\n${extractedText}` : extractedText);
       } else {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `msg-ocr-${Date.now()}`,
-            sender: 'mootion',
-            text: result.message || 'No text could be extracted from the image.',
-            timestamp: 'Just now',
-          },
-        ]);
+        alert(result.message || 'No text could be extracted from the image.');
       }
     } catch (err: any) {
       console.error('OCR extraction failed:', err);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `msg-ocr-err-${Date.now()}`,
-          sender: 'mootion',
-          text: `Failed to extract text from image: ${err?.detail || err?.message || 'Unknown error'}`,
-          timestamp: 'Just now',
-        },
-      ]);
+      alert(`Failed to extract text from image: ${err?.detail || err?.message || 'Unknown error'}`);
     } finally {
       setIsOcrLoading(false);
       if (ocrInputRef.current) ocrInputRef.current.value = '';
@@ -2747,7 +2728,7 @@ export function StudentPlaygroundPage() {
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
           <NavItem icon={<CheckSquare size={24} />} onClick={() => navigate('/student/tasks')} />
-          <NavItem icon={<Compass size={24} />} onClick={() => navigate('/student/explore')} />
+
           <NavItem icon={<Gamepad2 size={24} />} active onClick={() => navigate('/student/playground')} />
           <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>
@@ -3064,21 +3045,6 @@ export function StudentPlaygroundPage() {
                   )}
                 </AnimatePresence>
 
-                <input
-                  type="file"
-                  ref={ocrInputRef}
-                  className="hidden"
-                  accept="image/*"
-                  onChange={handleOcrUpload}
-                />
-                <input
-                  type="file"
-                  ref={cameraInputRef}
-                  className="hidden"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleOcrUpload}
-                />
                 <form onSubmit={handleSendMessage} className="flex gap-3 items-center relative">
                   
                   <div className="relative flex-1 flex items-center bg-[#f6f4ee] border-2 border-[#1800ad] rounded-full px-4 py-3.5 shadow-lg">
@@ -3090,32 +3056,6 @@ export function StudentPlaygroundPage() {
                       title="Summon Commands"
                     >
                       <Plus size={18} />
-                    </button>
-                    {/* Image/OCR upload button */}
-                    <button
-                      type="button"
-                      onClick={() => ocrInputRef.current?.click()}
-                      disabled={isOcrLoading}
-                      className={`p-1 rounded-full transition-all mr-0.5 shrink-0 ${isOcrLoading ? 'text-[#1800ad]/40 animate-pulse' : 'hover:bg-[#1800ad]/10 text-[#1800ad]/60 hover:text-[#1800ad]'}`}
-                      title="Upload image for OCR"
-                    >
-                      {isOcrLoading ? (
-                        <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 12a9 9 0 11-6.219-8.56" />
-                        </svg>
-                      ) : (
-                        <Paperclip size={18} />
-                      )}
-                    </button>
-                    {/* Camera capture button for OCR (mobile only) */}
-                    <button
-                      type="button"
-                      onClick={() => cameraInputRef.current?.click()}
-                      disabled={isOcrLoading}
-                      className="p-1 rounded-full transition-all mr-1 shrink-0 hover:bg-[#1800ad]/10 text-[#1800ad]/60 hover:text-[#1800ad] md:hidden"
-                      title="Take a photo for OCR"
-                    >
-                      <Camera size={18} />
                     </button>
                     
                     <div className="relative flex-1 min-w-0 flex items-center h-full">
@@ -3544,6 +3484,60 @@ export function StudentPlaygroundPage() {
                       Gemini is transcribing voice...
                     </span>
                   )}
+                  
+                  {/* OCR inputs */}
+                  <input
+                    type="file"
+                    ref={ocrInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleOcrUpload}
+                  />
+                  <input
+                    type="file"
+                    ref={cameraInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleOcrUpload}
+                  />
+
+                  {/* OCR Buttons */}
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => ocrInputRef.current?.click()}
+                      disabled={isOcrLoading}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border-2 transition-all ${
+                        isOcrLoading 
+                          ? 'border-[#1800ad]/20 text-[#1800ad]/40 animate-pulse' 
+                          : 'border-[#1800ad]/20 text-[#1800ad]/70 hover:border-[#1800ad] hover:text-[#1800ad]'
+                      }`}
+                    >
+                      {isOcrLoading ? (
+                        <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 12a9 9 0 11-6.219-8.56" />
+                        </svg>
+                      ) : (
+                        <Paperclip size={14} />
+                      )}
+                      Upload Image
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      disabled={isOcrLoading}
+                      className={`md:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border-2 transition-all ${
+                        isOcrLoading 
+                          ? 'border-[#1800ad]/20 text-[#1800ad]/40 animate-pulse' 
+                          : 'border-[#1800ad]/20 text-[#1800ad]/70 hover:border-[#1800ad] hover:text-[#1800ad]'
+                      }`}
+                    >
+                      <Camera size={14} />
+                      Take Photo
+                    </button>
+                  </div>
+
                 </div>
 
                 <div className="flex justify-end gap-2.5 pt-2">

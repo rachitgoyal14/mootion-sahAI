@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   LayoutDashboard, 
   CheckSquare, 
-  Compass, 
   Gamepad2, 
   Search, 
   ArrowRight,
@@ -217,7 +216,7 @@ export function StudentTasksPage() {
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2 flex justify-between items-center z-40 rounded-full shadow-[0_10px_40px_rgba(24,0,173,0.25)] border-[2px] border-[#f6f4ee]">
         <NavItem icon={<LayoutDashboard size={22} />} onClick={() => navigate('/student/home')} />
         <NavItem icon={<CheckSquare size={22} />} active onClick={() => navigate('/student/tasks')} />
-        <NavItem icon={<Compass size={22} />} onClick={() => navigate('/student/explore')} />
+
         <NavItem icon={<Gamepad2 size={22} />} onClick={() => navigate('/student/playground')} />
         <NavItem icon={<BarChart2 size={22} />} onClick={() => navigate('/student/analytics')} />
         <div 
@@ -238,7 +237,7 @@ export function StudentTasksPage() {
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
           <NavItem icon={<CheckSquare size={24} />} active onClick={() => navigate('/student/tasks')} />
-          <NavItem icon={<Compass size={24} />} onClick={() => navigate('/student/explore')} />
+
           <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
           <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>

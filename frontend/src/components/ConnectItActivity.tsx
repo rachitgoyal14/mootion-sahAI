@@ -165,9 +165,14 @@ export default function ConnectItActivity({ task, onDone }: ConnectItActivityPro
       const subject = task.subject || 'Science';
       const prompt = `Generate 8 pairs of related items for a "Connect It" matching activity on the topic: "${topic}" in subject "${subject}". Each pair should consist of a left item and a right item that are meaningfully related (e.g., term-definition, cause-effect, scenario-concept, etc.). The pairs should be appropriate for school students (grades 6-12). Return ONLY a valid JSON object with a "pairs" key containing an array of 8 objects, each with "left" and "right" strings. Example format: {"pairs": [{"left": "Photosynthesis", "right": "Process of converting light energy to chemical energy"}, ...]}`;
 
-      // Use the backend chat endpoint (which uses Gemini)
-      const response = await api.post('/api/chat', { message: prompt });
-      const raw = response.text || '';
+      // Use the frontend server's chat endpoint (which proxies to Gemini)
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: prompt })
+      });
+      const responseData = await response.json();
+      const raw = responseData.text || '';
       // Extract JSON from response (handling markdown etc.)
       let jsonStr = raw;
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -186,17 +191,16 @@ export default function ConnectItActivity({ task, onDone }: ConnectItActivityPro
       setGenerationError('Could not generate pairs. Using fallback pairs.');
       // Fallback pairs (static)
       const fallbackPairs = [
-        { left: 'Photosynthesis', right: 'Converts light to chemical energy' },
-        { left: 'Cellular Respiration', right: 'Releases energy from glucose' },
-        { left: 'Ecosystem', right: 'Community of living organisms and environment' },
-        { left: 'Food Chain', right: 'Linear sequence of energy transfer' },
-        { left: 'Nitrogen Fixation', right: 'Conversion of N2 to ammonia' },
-        { left: 'Carbon Cycle', right: 'Movement of carbon through systems' },
-        { left: 'Biome', right: 'Large geographic biotic unit' },
-        { left: 'Biodiversity', right: 'Variety of life in an ecosystem' },
+        { left: 'Using placeholder content', right: 'Please try regenerating' },
+        { left: 'API connection failed', right: 'Placeholder 1' },
+        { left: 'Generation Error', right: 'Placeholder 2' },
+        { left: 'Missing Topic', right: 'Placeholder 3' },
+        { left: 'Concept 5', right: 'Description 5' },
+        { left: 'Concept 6', right: 'Description 6' },
+        { left: 'Concept 7', right: 'Description 7' },
+        { left: 'Concept 8', right: 'Description 8' },
       ];
       setPairs(fallbackPairs);
-      localStorage.setItem(`connectit_${task.id}`, JSON.stringify({ pairs: fallbackPairs }));
     } finally {
       setIsGenerating(false);
     }

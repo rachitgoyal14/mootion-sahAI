@@ -81,6 +81,11 @@ export function TeacherTopicSetupPage() {
   const [interactiveStatuses, setInteractiveStatuses] = useState<Record<string, 'idle' | 'generating' | 'ready' | 'failed'>>({});
   const [interactiveErrors, setInteractiveErrors] = useState<Record<string, string>>({});
 
+  const [pendingQuizId, setPendingQuizId] = useState<string | null>(null);
+  const [quizPreviewData, setQuizPreviewData] = useState<any | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [approveSuccess, setApproveSuccess] = useState(false);
+
   useEffect(() => {
     if (!classId || !chapterId || !topicId) return;
     const loadChapterAndAsset = async () => {
@@ -261,6 +266,37 @@ export function TeacherTopicSetupPage() {
     }
   };
 
+  const handleSkipQuiz = async () => {
+    if (!classId || !pendingQuizId) return;
+    try {
+      await api.delete(`/teachers/classes/${classId}/assignments/${pendingQuizId}`);
+    } catch (err) {
+      console.warn("Failed to delete skipped quiz:", err);
+    }
+    setPendingQuizId(null);
+    setQuizPreviewData(null);
+    setInteractiveStatuses(prev => { const n = { ...prev }; delete n['interactive_quiz']; return n; });
+  };
+
+  const handleApproveQuiz = async () => {
+    if (!classId || !pendingQuizId || approving) return;
+    setApproving(true);
+    try {
+      await api.patch(`/teachers/classes/${classId}/assignments/${pendingQuizId}/approve`);
+      setPendingQuizId(null);
+      setQuizPreviewData(null);
+      setInteractiveStatuses(prev => ({ ...prev, interactive_quiz: 'ready' }));
+      setApproveSuccess(true);
+      setTimeout(() => setApproveSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to approve quiz:", err);
+      alert("Failed to approve quiz.");
+    } finally {
+      setApproving(false);
+    }
+  };
+
+
   const mapAssetTypeToAssignmentType = (assetType: string): string => {
     switch (assetType) {
       case 'concept_video': return 'video';
@@ -284,10 +320,8 @@ export function TeacherTopicSetupPage() {
       await api.post(`/teachers/classes/${classId}/assignments`, {
         chapter_id: chapterId,
         assignment_type: assignmentType,
-        title: activeAsset.asset_type === 'simulation' ? 'Predict It' : activeAsset.title,
-        instructions: activeAsset.asset_type === 'simulation' 
-          ? assignmentNotes.replace(activeAsset.title, 'Predict It') 
-          : assignmentNotes,
+        title: activeTopicTitle,
+        instructions: assignmentNotes,
       });
       setSuccess(true);
       // Wait 1.5s then navigate back to chapter setup page
@@ -592,36 +626,11 @@ export function TeacherTopicSetupPage() {
                             <span className="block text-[10px] font-black uppercase tracking-wider text-[#1800ad]/60 mb-1">Pedagogical Instructions:</span>
                             <p className="text-xs sm:text-sm text-[#1800ad] whitespace-pre-wrap">{activeAsset.payload_json.instructions}</p>
                           </div>
-                        ) : (
-                          Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
-                            const val = activeAsset.payload_json[key];
-                            if (typeof val === 'object') return null;
-                            return (
-                              <div key={key} className="flex justify-between items-center border-b border-[#1800ad]/5 py-1">
-                                <span className="capitalize font-bold text-[#1800ad]/60">{key.replace('_', ' ')}:</span>
-                                <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
-                              </div>
-                            );
-                          })
-                        )}
+                        ) : null}
                       </div>
                     )}
 
-                    {/* General payload fallback list for other asset types if any */}
-                    {!['quiz', 'explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
-                      <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
-                        {Object.keys(activeAsset.payload_json).filter(k => k !== 'placeholder' && k !== 'chapter_id' && k !== 'asset_type' && k !== 'provider' && k !== 'integration_target').map((key) => {
-                          const val = activeAsset.payload_json[key];
-                          if (typeof val === 'object') return null;
-                          return (
-                            <div key={key} className="flex justify-between items-center border-b border-[#1800ad]/5 py-1">
-                              <span className="capitalize font-bold text-[#1800ad]/60">{key.replace('_', ' ')}:</span>
-                              <span className="text-[#1800ad] font-extrabold">{String(val)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+
                   </div>
                 )}
               </div>
@@ -696,7 +705,7 @@ export function TeacherTopicSetupPage() {
                 <p className="text-[11px] font-semibold opacity-75 mb-4">
                   Click any mode to generate and assign an AI-powered interactive activity to the class.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {INTERACTIVE_ASSIGNMENT_TYPES.map((mode) => {
                     const status = interactiveStatuses[mode.type] || 'idle';
                     const isGenerating = status === 'generating';
@@ -707,15 +716,13 @@ export function TeacherTopicSetupPage() {
                       <div
                         key={mode.type}
                         className={`border-2 rounded-[20px] p-4 flex flex-col gap-3 transition-all ${
-                          isReady
-                            ? 'border-emerald-400 bg-emerald-50/50'
-                            : isFailed
+                          isFailed
                             ? 'border-rose-300 bg-rose-50/50'
                             : 'border-[#1800ad]/15 bg-[#f6f4ee] hover:border-[#1800ad]/40'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className={`p-2 rounded-xl ${isReady ? 'bg-emerald-500 text-white' : 'bg-[#1800ad]/5 text-[#1800ad] border border-[#1800ad]/15'}`}>
+                          <span className="p-2 rounded-xl bg-[#1800ad]/5 text-[#1800ad] border border-[#1800ad]/15">
                             {mode.icon === 'HelpCircle' && <HelpCircle size={16} />}
                             {mode.icon === 'Sliders' && <Sliders size={16} />}
                             {mode.icon === 'AlertCircle' && <AlertCircle size={16} />}
@@ -732,42 +739,55 @@ export function TeacherTopicSetupPage() {
                           <h3 className="font-black text-xs text-[#1800ad] mb-0.5">{mode.label}</h3>
                           <p className="text-[10px] font-semibold text-[#1800ad]/70 leading-relaxed">{mode.desc}</p>
                         </div>
-                        <button
-                          type="button"
-                          disabled={isGenerating || isReady}
-                          onClick={async () => {
-                            if (isGenerating || isReady || !classId || !chapterId) return;
-                            setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'generating' }));
-                            setInteractiveErrors(prev => { const n = { ...prev }; delete n[mode.type]; return n; });
-                            try {
-                              await api.post(`/teachers/classes/${classId}/assignments`, {
-                                chapter_id: chapterId,
-                                assignment_type: mode.type,
-                                title: `${mode.label} - ${activeTopicTitle}`,
-                                instructions: null,
-                              });
-                              setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'ready' }));
-                            } catch (err: any) {
-                              setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'failed' }));
-                              setInteractiveErrors(prev => ({ ...prev, [mode.type]: err?.detail || err?.message || 'Failed to create assignment.' }));
-                            }
-                          }}
-                          className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                            isGenerating
-                              ? 'bg-amber-100 text-amber-700 cursor-not-allowed'
-                              : isReady
-                              ? 'bg-emerald-100 text-emerald-700 cursor-not-allowed'
-                              : 'bg-[#1800ad] text-[#f6f4ee] hover:bg-[#1800ad]/90 cursor-pointer'
-                          }`}
-                        >
-                          {isGenerating ? (
-                            <><div className="w-3.5 h-3.5 border-2 border-t-amber-700 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" /> Generating...</>
-                          ) : isReady ? (
-                            <><Check size={12} className="stroke-[3]" /> Assigned ✓</>
-                          ) : (
-                            <><Zap size={12} /> Generate & Assign</>
-                          )}
-                        </button>
+                        {isReady ? (
+                          <div className="w-full py-2.5 flex items-center justify-center">
+                            <span className="text-[11px] font-semibold text-[#1800ad]/60">Generated and assigned to class</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isGenerating}
+                            onClick={async () => {
+                              if (isGenerating || !classId || !chapterId) return;
+                              setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'generating' }));
+                              setInteractiveErrors(prev => { const n = { ...prev }; delete n[mode.type]; return n; });
+                              try {
+                                const resp = await api.post(`/teachers/classes/${classId}/assignments`, {
+                                  chapter_id: chapterId,
+                                  assignment_type: mode.type,
+                                  title: `${mode.label} - ${activeTopicTitle}`,
+                                  instructions: null,
+                                });
+
+                                if (mode.type === 'interactive_quiz') {
+                                  try {
+                                    const detail = await api.get(`/teachers/classes/${classId}/assignments/${resp.assignment_id}`);
+                                    setQuizPreviewData(detail);
+                                  } catch {
+                                    console.warn("Could not fetch quiz detail");
+                                  }
+                                  setPendingQuizId(resp.assignment_id);
+                                } else {
+                                  setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'ready' }));
+                                }
+                              } catch (err: any) {
+                                setInteractiveStatuses(prev => ({ ...prev, [mode.type]: 'failed' }));
+                                setInteractiveErrors(prev => ({ ...prev, [mode.type]: err?.detail || err?.message || 'Failed to create assignment.' }));
+                              }
+                            }}
+                            className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                              isGenerating
+                                ? 'bg-amber-100 text-amber-700 cursor-not-allowed'
+                                : 'bg-[#1800ad] text-[#f6f4ee] hover:bg-[#1800ad]/90 cursor-pointer'
+                            }`}
+                          >
+                            {isGenerating ? (
+                              <><div className="w-3.5 h-3.5 border-2 border-t-amber-700 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" /> Generating...</>
+                            ) : (
+                              <><Zap size={12} /> Generate & Assign</>
+                            )}
+                          </button>
+                        )}
                         {errorMsg && <p className="text-[10px] font-bold text-rose-600">{errorMsg}</p>}
                       </div>
                     );
@@ -897,6 +917,111 @@ export function TeacherTopicSetupPage() {
 
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* ───────────────────────────────────────────────────────────────
+           QUIZ APPROVED SUCCESS TOAST
+      ─────────────────────────────────────────────────────────────── */}
+      {approveSuccess && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold text-sm flex items-center gap-2 animate-fade-in">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Quiz approved and assigned to students!
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────
+           QUIZ PREVIEW MODAL (for interactive_quiz pending approval)
+      ─────────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {pendingQuizId && quizPreviewData && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-[#1800ad]/40 z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-[#f6f4ee] rounded-[32px] border-2 border-[#1800ad] w-full max-w-lg p-6 sm:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            >
+              <h3 className="text-xl font-black text-[#1800ad] tracking-tight mb-1">
+                Preview Quiz
+              </h3>
+              <p className="text-xs font-semibold opacity-75 mb-5">
+                Review the generated quiz questions before approving. Students will only see this quiz after you approve.
+              </p>
+
+              {quizPreviewData.content_json?.quiz?.length > 0 ? (
+                <div className="flex flex-col gap-4 mb-6">
+                  {quizPreviewData.content_json.quiz.map((q: any, idx: number) => (
+                    <div key={idx} className="bg-white rounded-2xl border border-[#1800ad]/15 p-4">
+                      <p className="text-xs font-black text-[#1800ad] uppercase tracking-wider mb-2">
+                        Q{idx + 1}
+                      </p>
+                      <p className="text-sm font-bold text-[#1800ad] mb-2">
+                        {q.question}
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {(q.options || []).map((opt: string, oi: number) => (
+                          <div
+                            key={oi}
+                            className={`text-xs font-semibold px-3 py-2 rounded-xl border ${
+                              q.correctAnswer === oi
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                : 'bg-gray-50 border-gray-200 text-[#1800ad]/70'
+                            }`}
+                          >
+                            {q.correctAnswer === oi && (
+                              <span className="text-emerald-600 mr-1.5">&#10003;</span>
+                            )}
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] font-semibold text-[#1800ad]/40 text-center">
+                    Correct answers are highlighted in green
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-sm font-semibold text-[#1800ad]/50">
+                  No quiz questions were generated. You may want to delete this assignment and try again.
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleSkipQuiz}
+                  disabled={approving}
+                  className="flex-1 py-3 border-2 border-[#1800ad] rounded-full text-xs font-black uppercase tracking-wider text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors"
+                >
+                  Skip for Now
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApproveQuiz}
+                  disabled={approving || !quizPreviewData.content_json?.quiz?.length}
+                  className="flex-1 py-3 bg-[#1800ad] text-white rounded-full text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#1800ad]/90 transition-colors disabled:opacity-50"
+                >
+                  {approving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
+                      Approving...
+                    </>
+                  ) : (
+                    'Approve & Assign'
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -13,10 +13,11 @@ import { TASKS, Task } from '../data/tasks';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
 import { ChatbotFab } from '../components/ChatbotFab';
-import { LayoutDashboard, CheckSquare, Compass, Gamepad2, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Gamepad2, BarChart2 } from 'lucide-react';
 
 // Import modular Teach AI activities and progress panels
 import { LiveVoiceActivity, AttemptHistoryPanel } from '../components/LiveVoiceActivity';
+import ConnectItActivity from '../components/ConnectItActivity';
 
 // --- Content Components ---
 
@@ -94,8 +95,10 @@ function QuizContent({ task }: { task: Task }) {
 
   if (isSubmitted) {
     let score = 0;
-    questions.forEach(question => {
-      if (answers[question.id] === question.correctAnswer) score++;
+    questions.forEach((question, idx) => {
+      const selectedOptString = answers[idx];
+      const correctOptString = question.options[question.correctAnswer];
+      if (selectedOptString === correctOptString) score++;
     });
 
     return (
@@ -128,19 +131,19 @@ function QuizContent({ task }: { task: Task }) {
             {timeLeft}
           </div>
           <span className="font-bold text-[#1800ad]/50 text-sm mb-4 block uppercase tracking-wider">Question {currentIdx + 1} of {questions.length}</span>
-          <h3 className="text-2xl font-black text-[#1800ad] mb-8 pr-16">{q.questionText}</h3>
+          <h3 className="text-2xl font-black text-[#1800ad] mb-8 pr-16">{q.questionText ?? q.question ?? q.prompt ?? q.text ?? ''}</h3>
 
           <div className="flex flex-col gap-4">
              {q.options?.map((opt: string) => (
                 <button
                   key={opt} 
-                  onClick={() => setAnswers({...answers, [q.id]: opt})}
-                  className={`text-left flex items-center gap-4 p-5 rounded-2xl border-2 transition-all w-full ${answers[q.id] === opt ? 'border-[#1800ad] bg-[#1800ad]/5 shadow-[0_0_0_2px_rgba(24,0,173,0.1)]' : 'border-[#1800ad]/10 hover:border-[#1800ad]/30 hover:bg-[#f6f4ee]'}`}
+                  onClick={() => setAnswers({...answers, [currentIdx]: opt})}
+                  className={`text-left flex items-center gap-4 p-5 rounded-2xl border-2 transition-all w-full ${answers[currentIdx] === opt ? 'border-[#1800ad] bg-[#1800ad]/5 shadow-[0_0_0_2px_rgba(24,0,173,0.1)]' : 'border-[#1800ad]/10 hover:border-[#1800ad]/30 hover:bg-[#f6f4ee]'}`}
                 >
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${answers[q.id] === opt ? 'border-[#1800ad]' : 'border-[#1800ad]/30'}`}>
-                    {answers[q.id] === opt && <div className="w-3 h-3 bg-[#1800ad] rounded-full" />}
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${answers[currentIdx] === opt ? 'border-[#1800ad]' : 'border-[#1800ad]/30'}`}>
+                    {answers[currentIdx] === opt && <div className="w-3 h-3 bg-[#1800ad] rounded-full" />}
                   </div>
-                  <span className={`font-bold text-lg ${answers[q.id] === opt ? 'text-[#1800ad]' : 'text-[#1800ad]/80'}`}>{opt}</span>
+                  <span className={`font-bold text-lg ${answers[currentIdx] === opt ? 'text-[#1800ad]' : 'text-[#1800ad]/80'}`}>{opt}</span>
                 </button>
              ))}
           </div>
@@ -150,7 +153,7 @@ function QuizContent({ task }: { task: Task }) {
           {currentIdx === questions.length - 1 ? (
              <button 
                 onClick={() => setIsSubmitted(true)}
-                disabled={!answers[q.id]}
+                disabled={!answers[currentIdx]}
                 className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
              >
                 Submit Answers
@@ -158,7 +161,7 @@ function QuizContent({ task }: { task: Task }) {
           ) : (
              <button 
                 onClick={() => { setCurrentIdx(prev => prev + 1); setTimeLeft(10); }}
-                disabled={!answers[q.id]}
+                disabled={!answers[currentIdx]}
                 className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0"
              >
                 Next <ChevronRight size={20} />
@@ -312,17 +315,7 @@ export function StudentTaskActivityPage() {
   const fromHome = searchParams.get('fromHome') === 'true';
   const classId = searchParams.get('class_id');
   
-  // Determine if we accessed from Explore or Tasks
-  const isFromExplore = !fromHome && !!(taskId && taskId.startsWith('exp_'));
   let backUrl = fromHome ? '/student/home' : '/student/tasks';
-  if (isFromExplore) {
-    const parts = taskId.split('_');
-    if (parts.length >= 3) {
-      const subjectCode = parts[1];
-      const chapterId = parts[2];
-      backUrl = `/student/explore/${subjectCode}/${chapterId}`;
-    }
-  }
 
   const [dbTask, setDbTask] = useState<any | null>(null);
   const [loadingDbTask, setLoadingDbTask] = useState(false);
@@ -346,8 +339,8 @@ export function StudentTaskActivityPage() {
   }, [classId]);
 
   useEffect(() => {
-    // If it's a static task ID (like p1, c1, m1) or exp_, we don't fetch
-    if (!taskId || taskId.startsWith('exp_') || ['p1', 'p2', 'c1', 'c2', 'c3', 'm1', 'm2', 'm3', 'b1', 'b2', 'b3'].includes(taskId)) {
+    // If it's a static task ID (like p1, c1, m1), we don't fetch
+    if (!taskId || ['p1', 'p2', 'c1', 'c2', 'c3', 'm1', 'm2', 'm3', 'b1', 'b2', 'b3'].includes(taskId)) {
       return;
     }
     
@@ -408,41 +401,8 @@ export function StudentTaskActivityPage() {
       status: dbTask.status === 'ready' ? 'Not Started' : 'In Progress',
       dbTask: dbTask
     };
-  } else if (!taskId?.startsWith('exp_')) {
-    task = TASKS.find(t => t.id === taskId);
   } else {
-    const parts = taskId.split('_'); // exp, phy, c3, t1, Video/Simulation/Quiz
-    const subjectCode = parts[1];
-    const chapterId = parts[2];
-    const topicId = parts[3];
-    const itemType = parts[4];
-
-    let subjectStr = 'Physics';
-    if (subjectCode === 'chm') subjectStr = 'Chemistry';
-    else if (subjectCode === 'mat') subjectStr = 'Mathematics';
-    else if (subjectCode === 'bio') subjectStr = 'Biology';
-
-    let topicName = 'Explore Lesson';
-    if (subjectCode === 'phy' && chapterId === 'c3') {
-      if (topicId === 't1') topicName = 'Introduction to Buoyancy';
-      else if (topicId === 't2') topicName = 'Archimedes\' Principle';
-      else if (topicId === 't3') topicName = 'Floating and Sinking';
-    } else {
-      const typeStr = itemType || 'Video';
-      topicName = `${subjectStr} Ch${chapterId.replace('c', '')} Topic ${topicId.toUpperCase().replace('T', '')}`;
-    }
-
-    const typeLabel = itemType === 'Video' ? 'Watch Video' : itemType === 'Quiz' ? 'Attempt Quiz' : 'Simulation';
-
-    task = {
-      id: taskId,
-      type: itemType === 'Simulation' ? 'Predict It' : (itemType as any || 'Video'),
-      typeLabel: itemType === 'Simulation' ? 'Predict It' : typeLabel,
-      topic: topicName,
-      subject: subjectStr,
-      deadline: 'Explore Activity',
-      status: 'In Progress'
-    };
+    task = TASKS.find(t => t.id === taskId);
   }
 
   const [activeActivity, setActiveActivity] = useState<string | null>(null);
@@ -493,8 +453,7 @@ export function StudentTaskActivityPage() {
         </div>
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/student/home')} />
-          <NavItem icon={<CheckSquare size={24} />} active={!isFromExplore} onClick={() => navigate('/student/tasks')} />
-          <NavItem icon={<Compass size={24} />} active={isFromExplore} onClick={() => navigate('/student/explore')} />
+          <NavItem icon={<CheckSquare size={24} />} active onClick={() => navigate('/student/tasks')} />
           <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
           <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>
@@ -522,12 +481,12 @@ export function StudentTaskActivityPage() {
              <AnimatePresence mode="wait">
                {activeActivity === 'Explain It' && (
                  <motion.div key="ExplainIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <LiveVoiceActivity task={task} activityName="Explain It" instructions="Teach the concept and answer questions." onDone={() => setActiveActivity(null)} />
+                   <LiveVoiceActivity task={task} activityName="Explain It" instructions="Teach the concept and answer questions." onDone={() => navigate('/student/home')} />
                  </motion.div>
                )}
                {activeActivity === 'Connect It' && (
                  <motion.div key="ConnectIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <LiveVoiceActivity task={task} activityName="Connect It" instructions="Explain the relationship between concepts." onDone={() => setActiveActivity(null)} />
+                   <ConnectItActivity task={task} onDone={() => setActiveActivity(null)} />
                  </motion.div>
                )}
               {!activeActivity && (

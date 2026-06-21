@@ -570,7 +570,18 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
         model: "gemini-3.1-flash-live-preview",
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
-            if (clientWs.readyState !== 1 /* WebSocket.OPEN */) return;
+            console.log("[server.ts] Received msg from Gemini Live API. Type:", Object.keys(message));
+            if (message.serverContent) {
+              console.log("[server.ts] -> serverContent keys:", Object.keys(message.serverContent));
+              if (message.serverContent.modelTurn) {
+                console.log("[server.ts] -> modelTurn parts length:", message.serverContent.modelTurn.parts?.length);
+              }
+            }
+
+            if (clientWs.readyState !== 1 /* WebSocket.OPEN */) {
+              console.log("[server.ts] Client WS is closed, dropping message");
+              return;
+            }
             
             const anyMsg = message as any;
             const parts = message.serverContent?.modelTurn?.parts;
@@ -579,6 +590,7 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
             if (parts) {
               for (const part of parts) {
                 if (part.inlineData?.data) {
+                  console.log("[server.ts] Forwarding audio chunk of length", part.inlineData.data.length);
                   clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
                 }
               }
@@ -607,8 +619,8 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
                 }
               }
             }
-            if (anyMsg.outputTranscription?.transcription) {
-              modelText += anyMsg.outputTranscription.transcription;
+            if (anyMsg.serverContent?.outputTranscription?.transcription) {
+              modelText += anyMsg.serverContent.outputTranscription.transcription;
             }
             if (modelText) {
               clientWs.send(JSON.stringify({ modelTranscript: cleanText(modelText) }));
@@ -622,19 +634,22 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction,
+          systemInstruction: { parts: [{ text: systemInstruction }] },
         }
       });
 
       clientWs.on("message", (data) => {
         try {
           const parsed = JSON.parse(data.toString());
+          console.log("[server.ts] Received msg from client WS. Has audio:", !!parsed.audio, "Has text:", !!parsed.text);
           if (parsed.audio) {
-            session.sendRealtimeInput({
-              audio: { data: parsed.audio, mimeType: "audio/pcm;rate=16000" },
-            });
+            console.log("[server.ts] Sending audio to Gemini Live (length)", parsed.audio.length);
+            session.sendRealtimeInput([{
+              data: parsed.audio, mimeType: "audio/pcm;rate=16000"
+            }]);
           }
           if (parsed.text) {
+            console.log("[server.ts] Sending text to Gemini Live:", parsed.text);
             session.sendRealtimeInput({
               text: parsed.text
             });
