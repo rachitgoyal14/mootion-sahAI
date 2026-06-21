@@ -296,6 +296,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   .assess-area .q { font-size: 13px; line-height: 1.6; color: #1e293b; font-weight: 600; }
   .assess-area .h { font-size: 11px; color: #64748b; margin-top: 6px; font-style: italic; line-height: 1.5; }
+  .opt-btn {
+    padding: 8px 16px; 
+    border: 1px solid #cbd5e1; 
+    border-radius: 8px;
+    background: #ffffff; 
+    color: #475569; 
+    font-size: 11px; 
+    font-weight: 700;
+    cursor: pointer; 
+    transition: all 0.15s ease;
+    font-family: 'Montserrat', sans-serif;
+  }
+  .opt-btn:hover:not(:disabled) {
+    background: rgba(24, 0, 173, 0.04);
+    color: #1800ad;
+    border-color: #1800ad;
+  }
+  .opt-btn:disabled {
+    cursor: not-allowed;
+  }
   
   /* ── Divider ── */
   .panel-divider { height: 1px; background: #e2e8f0; margin: 3px 0; }
@@ -703,7 +723,7 @@ def build_simulation_html(
 
     controls_html    = custom_controls    or _build_controls_html(spec)
     live_values_html = custom_live_values or _build_live_values_html(spec)
-    graph_html       = custom_graph       or _build_graph_html(spec)
+    graph_html       = ""
     assessment_html  = custom_assessment  or _build_assessment_html(spec)
     presets_html     = custom_presets     or ""
     script_content   = _build_script(spec, custom_script)
@@ -761,38 +781,7 @@ def _build_script(spec: SimulationSpecification, custom_script: str) -> str:
 
 def _build_graph_data_push(spec: SimulationSpecification) -> str:
     """Generate sensible graph push code from spec, or empty string."""
-    if not spec.graphs:
-        return ""
-    g = spec.graphs[0]
-    if not g.series:
-        return ""
-    lines = ["if (graphMgr) {"]
-    declared_v_keys = set()
-    declared_x_keys = set()
-    for s in g.series[:2]:
-        key = s.get("key") or s.get("name", "output")
-        name = s.get("name", key)
-        x_key = s.get("x_key", "time")
-        safe_key = "".join(c if c.isalnum() else "_" for c in key)
-        safe_x_key = "".join(c if c.isalnum() else "_" for c in x_key)
-        
-        if safe_key not in declared_v_keys:
-            lines.append(
-                f"  const _v_{safe_key} = parseFloat(state.get('{key}') || 0);"
-            )
-            declared_v_keys.add(safe_key)
-            
-        if safe_x_key not in declared_x_keys:
-            lines.append(
-                f"  const _x_{safe_x_key} = parseFloat(state.get('{x_key}') || 0);"
-            )
-            declared_x_keys.add(safe_x_key)
-            
-        lines.append(
-            f"  graphMgr.pushData('{name}', _x_{safe_x_key}, _v_{safe_key});"
-        )
-    lines.append("}")
-    return "\n".join(lines)
+    return ""
 
 
 def _build_initial_state(spec: SimulationSpecification) -> dict:
@@ -857,34 +846,61 @@ def _value_card_html(label, vid, default_val, color=None):
 
 
 def _build_graph_html(spec: SimulationSpecification) -> str:
-    if not spec.graphs:
-        return ""
-    g = spec.graphs[0]
-    legend_items = "".join(
-        f'<span><span class="dot" style="background:{s.get("color","#6366f1")}"></span>{s["name"]}</span>'
-        for s in g.series
-    )
-    return (
-        f'  <div class="graph-area">\n'
-        f'    <div class="graph-header">\n'
-        f'      <div class="gt">{g.title}</div>\n'
-        f'      <div class="gl">{legend_items}</div>\n'
-        f'    </div>\n'
-        f'    <canvas id="graph-canvas" width="700" height="160" aria-label="{g.title} graph"></canvas>\n'
-        f'  </div>'
-    )
+    return ""
 
 
 def _build_assessment_html(spec: SimulationSpecification) -> str:
     if not spec.assessment_prompts:
         return ""
     ap = spec.assessment_prompts[0]
+    
+    options = getattr(ap, 'options', None) or ["Increases", "Decreases", "Doubles", "Remains unchanged"]
+    correct_idx = getattr(ap, 'correct_answer', 0)
+    
+    options_html = ""
+    for idx, opt in enumerate(options):
+        options_html += (
+            f'      <button class="opt-btn" onclick="checkAnswer({idx}, {correct_idx})">{opt}</button>\n'
+        )
+        
     return (
-        f'  <div class="assess-area">\n'
-        f'    <div class="ql">Try This</div>\n'
+        f'  <div class="assess-area" id="prediction-mcq-area">\n'
+        f'    <div class="ql">Predict It</div>\n'
         f'    <div class="q" id="assess-q">{ap.question}</div>\n'
-        f'    <div class="h" id="assess-h">{ap.hint}</div>\n'
-        f'  </div>'
+        f'    <div class="options-container" style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">\n'
+        f'{options_html}'
+        f'    </div>\n'
+        f'    <div class="feedback-msg" id="mcq-feedback" style="display: none; margin-top: 10px; font-size: 12px; font-weight: 700;"></div>\n'
+        f'    <div class="h" id="assess-h" style="display: none; margin-top: 6px; font-size: 11px; color: #64748b; font-style: italic;">Hint: {ap.hint}</div>\n'
+        f'  </div>\n'
+        f'  <script>\n'
+        f'    function checkAnswer(chosenIdx, correctIdx) {{\n'
+        f'      const feedbackEl = document.getElementById("mcq-feedback");\n'
+        f'      const hintEl = document.getElementById("assess-h");\n'
+        f'      const buttons = document.querySelectorAll("#prediction-mcq-area .opt-btn");\n'
+        f'      buttons.forEach((btn, idx) => {{\n'
+        f'        btn.disabled = true;\n'
+        f'        if (idx === correctIdx) {{\n'
+        f'          btn.style.background = "#d1fae5";\n'
+        f'          btn.style.borderColor = "#10b981";\n'
+        f'          btn.style.color = "#065f46";\n'
+        f'        }} else if (idx === chosenIdx) {{\n'
+        f'          btn.style.background = "#fee2e2";\n'
+        f'          btn.style.borderColor = "#ef4444";\n'
+        f'          btn.style.color = "#991b1b";\n'
+        f'        }}\n'
+        f'      }});\n'
+        f'      feedbackEl.style.display = "block";\n'
+        f'      if (chosenIdx === correctIdx) {{\n'
+        f'        feedbackEl.textContent = "✓ Correct prediction! Run the simulation below to verify and see it in action.";\n'
+        f'        feedbackEl.style.color = "#10b981";\n'
+        f'      }} else {{\n'
+        f'        feedbackEl.textContent = "✗ Not quite! Let\'s test the correct outcome by playing the simulation below.";\n'
+        f'        feedbackEl.style.color = "#ef4444";\n'
+        f'      }}\n'
+        f'      if (hintEl) hintEl.style.display = "block";\n'
+        f'    }}\n'
+        f'  </script>\n'
     )
 
 

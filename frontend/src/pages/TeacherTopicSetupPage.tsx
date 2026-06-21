@@ -746,7 +746,7 @@ export function TeacherTopicSetupPage() {
                 <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
                   <div className="border-b border-[#1800ad]/10 pb-2">
                     <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">
-                      Interactive Live Preview
+                      PREDICT IT
                     </h3>
                   </div>
 

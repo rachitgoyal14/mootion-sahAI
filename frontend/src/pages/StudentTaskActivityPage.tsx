@@ -544,6 +544,7 @@ export function StudentTaskActivityPage() {
   }
 
   const [dbTask, setDbTask] = useState<any | null>(null);
+  const [simulationUrl, setSimulationUrl] = useState<string | null>(null);
   const [loadingDbTask, setLoadingDbTask] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [resolvedSubject, setResolvedSubject] = useState('Science');
@@ -600,6 +601,32 @@ export function StudentTaskActivityPage() {
     };
     fetchAssignment();
   }, [taskId, classId]);
+
+  useEffect(() => {
+    const finalClassId = classId || dbTask?.class_id;
+    const finalChapterId = dbTask?.chapter_id;
+    if (!finalClassId || !finalChapterId) return;
+
+    const fetchChapterDetails = async () => {
+      try {
+        const chapterData = await api.get(`/students/classes/${finalClassId}/chapters/${finalChapterId}`);
+        if (chapterData) {
+          const allAssets = [
+            ...(chapterData.assets || []),
+            ...(chapterData.topics?.flatMap((t: any) => t.assets || []) || [])
+          ];
+          const readySim = allAssets.find((a: any) => a.asset_type === 'simulation' && a.generation_status === 'ready');
+          if (readySim && readySim.external_url) {
+            setSimulationUrl(readySim.external_url);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load chapter assets for simulation:", err);
+      }
+    };
+
+    fetchChapterDetails();
+  }, [classId, dbTask]);
   
   // Resolve task or dynamic task from explore chapters or backend
   let task: any = null;
@@ -682,9 +709,18 @@ export function StudentTaskActivityPage() {
 
   const [activeActivity, setActiveActivity] = useState<string | null>(null);
 
+  const isSimulationTask = !!(task && (
+    task.type === 'Simulation' || 
+    task.type === 'Predict It' ||
+    task.typeLabel === 'Simulation' || 
+    task.typeLabel === '3D Model' || 
+    task.typeLabel === 'Predict It' ||
+    (dbTask && ['simulation', 'model', 'predict_ai', 'predict_it', 'PREDICT_IT'].includes(dbTask.assignment_type))
+  ));
+
   useEffect(() => {
     if (task && ['Explain It', 'Predict It', 'Spot It', 'Connect It', 'Interactive Quiz'].includes(task.type)) {
-      if (task.type === 'Interactive Quiz') {
+      if (task.type === 'Interactive Quiz' || task.type === 'Predict It') {
         setActiveActivity(null);
       } else {
         setActiveActivity(task.type);
@@ -762,11 +798,6 @@ export function StudentTaskActivityPage() {
                    <LiveVoiceActivity task={task} activityName="Explain It" instructions="Teach the concept and answer questions." onDone={() => setActiveActivity(null)} />
                  </motion.div>
                )}
-               {activeActivity === 'Predict It' && (
-                 <motion.div key="PredictIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <LiveVoiceActivity task={task} activityName="Predict It" instructions="Predict the outcome before it happens." onDone={() => setActiveActivity(null)} />
-                 </motion.div>
-               )}
                {activeActivity === 'Spot It' && (
                  <motion.div key="SpotIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
                    <LiveVoiceActivity task={task} activityName="Spot It" instructions="Identify the concept in a real-world scenario." onDone={() => setActiveActivity(null)} />
@@ -788,18 +819,20 @@ export function StudentTaskActivityPage() {
                      <div className="lg:hidden w-full mt-6 pb-12">
                         <div className="bg-[#1800ad] rounded-[22px] p-4 shadow-lg relative overflow-hidden">
                           <h3 className="font-bold text-md text-white mb-2 pb-1 border-b border-white/10 tracking-wide">Activity</h3>
-                          <div className="grid grid-cols-2 gap-2.5 relative z-10 w-full">
+                          <div className={`grid ${isSimulationTask ? 'grid-cols-3 gap-1.5' : 'grid-cols-2 gap-2.5'} relative z-10 w-full`}>
                              <button onClick={() => setActiveActivity('Explain It')} className="bg-[#f6f4ee] rounded-[16px] h-14 flex flex-col items-center justify-center shadow-md hover:scale-102 transition-transform">
-                                <span className="font-bold text-sm text-[#1800ad] text-center leading-tight">Explain It</span>
+                                <span className="font-bold text-xs sm:text-sm text-[#1800ad] text-center leading-tight">Explain It</span>
                              </button>
-                             <button onClick={() => setActiveActivity('Predict It')} className="bg-[#f6f4ee] rounded-[16px] h-14 flex flex-col items-center justify-center shadow-md hover:scale-102 transition-transform">
-                                <span className="font-bold text-sm text-[#1800ad] text-center leading-tight">Predict It</span>
-                             </button>
+                             {!isSimulationTask && (
+                               <button onClick={() => setActiveActivity('Predict It')} className="bg-[#f6f4ee] rounded-[16px] h-14 flex flex-col items-center justify-center shadow-md hover:scale-102 transition-transform">
+                                  <span className="font-bold text-xs sm:text-sm text-[#1800ad] text-center leading-tight">Predict It</span>
+                               </button>
+                             )}
                              <button onClick={() => setActiveActivity('Spot It')} className="bg-[#f6f4ee] rounded-[16px] h-14 flex flex-col items-center justify-center shadow-md hover:scale-102 transition-transform">
-                                <span className="font-bold text-sm text-[#1800ad] text-center leading-tight">Spot It</span>
+                                <span className="font-bold text-xs sm:text-sm text-[#1800ad] text-center leading-tight">Spot It</span>
                              </button>
                              <button onClick={() => setActiveActivity('Connect It')} className="bg-[#f6f4ee] rounded-[16px] h-14 flex flex-col items-center justify-center shadow-md hover:scale-102 transition-transform">
-                                <span className="font-bold text-sm text-[#1800ad] text-center leading-tight">Connect It</span>
+                                <span className="font-bold text-xs sm:text-sm text-[#1800ad] text-center leading-tight">Connect It</span>
                              </button>
                           </div>
                         </div>
@@ -819,33 +852,35 @@ export function StudentTaskActivityPage() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-3">
                 <button 
                   onClick={() => setActiveActivity('Explain It')} 
-                  className="h-24 bg-[#f6f4ee] rounded-[20px] p-3 flex flex-col justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative"
+                  className="h-16 bg-[#f6f4ee] rounded-[20px] p-3 flex justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative w-full"
                 >
-                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Explain<br/>It</span>
+                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Explain It</span>
                 </button>
 
-                <button 
-                  onClick={() => setActiveActivity('Predict It')} 
-                  className="h-24 bg-[#f6f4ee] rounded-[20px] p-3 flex flex-col justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative"
-                >
-                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Predict<br/>It</span>
-                </button>
+                {!isSimulationTask && (
+                  <button 
+                    onClick={() => setActiveActivity('Predict It')} 
+                    className="h-16 bg-[#f6f4ee] rounded-[20px] p-3 flex justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative w-full"
+                  >
+                    <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Predict It</span>
+                  </button>
+                )}
 
                 <button 
                   onClick={() => setActiveActivity('Spot It')} 
-                  className="h-24 bg-[#f6f4ee] rounded-[20px] p-3 flex flex-col justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative"
+                  className="h-16 bg-[#f6f4ee] rounded-[20px] p-3 flex justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative w-full"
                 >
-                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Spot<br/>It</span>
+                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Spot It</span>
                 </button>
 
                 <button 
                   onClick={() => setActiveActivity('Connect It')} 
-                  className="h-24 bg-[#f6f4ee] rounded-[20px] p-3 flex flex-col justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative"
+                  className="h-16 bg-[#f6f4ee] rounded-[20px] p-3 flex justify-center items-center group hover:scale-[1.03] transition-all shadow-md relative w-full"
                 >
-                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Connect<br/>It</span>
+                  <span className="font-bold text-center text-[#1800ad] text-sm leading-tight">Connect It</span>
                 </button>
               </div>
             </div>
