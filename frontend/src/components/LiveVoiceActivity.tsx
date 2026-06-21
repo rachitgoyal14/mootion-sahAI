@@ -1,26 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { api } from '../lib/api';
 import {
-  ArrowLeft,
   Mic,
   Square,
   PlayCircle,
   Beaker,
   FileQuestion,
-  ChevronLeft,
   ChevronRight,
   CheckCircle2,
   X,
-  MessageCircle,
-  Eye,
-  Link2,
-  Target,
-  RotateCcw,
-  Calendar,
-  Trash2,
   Sparkles,
   Award,
-  BookOpen,
-  ArrowUpDown,
+  Target,
+  Trash2,
   History,
   Check,
   GraduationCap
@@ -87,7 +79,7 @@ export function LiveVoiceActivity({
   onDone: () => void
 }) {
   // Activity Specific Steps & Flow State
-  const [activePlayState, setActivePlayState] = useState<'intro' | 'prediction' | 'simulation' | 'explaining' | 'grading'>('intro');
+  const [activePlayState, setActivePlayState] = useState<'intro' | 'prediction' | 'simulation' | 'explaining' | 'grading'>('explaining');
   const [predictionChoice, setPredictionChoice] = useState<'sink' | 'float' | null>(null);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [simulationPercentage, setSimulationPercentage] = useState(0);
@@ -158,30 +150,13 @@ export function LiveVoiceActivity({
 
   const hasGreetedRef = useRef(false);
 
-  // Init default introduction text based on activity mode
+  // Initialize: no hardcoded greeting, just set state to explaining.
   useEffect(() => {
     if (hasGreetedRef.current) return;
     hasGreetedRef.current = true;
-
-    let initialGreeting = "";
-    if (activityName === 'Explain It') {
-      initialGreeting = `Hey there! Whenever you're ready, tell me a bit about ${task.topic}. I'm all ears, and then we can explore it together!`;
-      setActivePlayState('explaining');
-    } else if (activityName === 'Predict It') {
-      initialGreeting = `Today we're predicting: Will a massive 5kg solid metal ball sink or float inside full fresh water? What's your prediction? Select SINK or FLOAT below so we can start!`;
-      setActivePlayState('prediction');
-    } else if (activityName === 'Spot It') {
-      initialGreeting = `Consider this phenomenon: "A giant ocean container ship of 100,000 tons floats perfectly, but a tiny paperclip sinks instantly." Why does this happen? Explain the physics forces to me.`;
-      setActivePlayState('explaining');
-    } else if (activityName === 'Connect It') {
-      initialGreeting = `Let's connect blocks. I have three cards for us: Upthrust Force, Liquid Density, and Immersed Volume. Can you explain how they all connect together physically?`;
-      setActivePlayState('explaining');
-    }
-
-    setMessages([
-      { role: 'Mootion', text: initialGreeting }
-    ]);
-    speakVoiceSynthesis(initialGreeting);
+    setActivePlayState('explaining');
+    // Optionally set a short initial message if needed, but we skip to keep clean.
+    setMessages([]);
   }, [activityName, task]);
 
   // Handle scrolling of captions
@@ -224,12 +199,14 @@ export function LiveVoiceActivity({
   };
 
   const speakVoiceSynthesis = async (text: string) => {
+    // If WebSocket is active, we rely on Gemini streaming audio, so skip external TTS.
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("Skipping API TTS because dynamic Live WebSocket stream is open.");
+      console.log("Skipping TTS because WebSocket is active.");
       return;
     }
 
     try {
+      // Attempt to use server TTS endpoint (fallback)
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,10 +228,6 @@ export function LiveVoiceActivity({
 
   // Speaks using browser speech synthesis for captions + voice sync (fallback / high fidelity)
   const speakBrowserTTS = (text: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("Skipping browser speech synthesis because dynamic Live WebSocket stream is open.");
-      return;
-    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -277,7 +250,7 @@ export function LiveVoiceActivity({
         utterance.voice = selectedVoice;
       }
 
-      utterance.pitch = 1.02; // Warm, natural human pitch (reverted from 1.35 robotic chipmunk pitch)
+      utterance.pitch = 1.02;
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     }
@@ -465,6 +438,8 @@ export function LiveVoiceActivity({
       ws.onerror = (err) => {
         console.error("Live WebSocket Error:", err);
         setIsWebSocketActive(false);
+        // Fallback: enable local speech recognition if WebSocket fails
+        startLocalSpeechRecognition();
       };
 
       ws.onclose = () => {
@@ -490,7 +465,7 @@ export function LiveVoiceActivity({
         ws.send(JSON.stringify({ audio: base64PCM }));
       };
 
-      // Set up proactive local speech recognition fallback
+      // Start local speech recognition as a backup if WebSocket fails
       const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechReg) {
         const recog = new SpeechReg();
@@ -530,29 +505,33 @@ export function LiveVoiceActivity({
       console.warn("Hardware mic blocked or unavailable", err);
 
       // Fallback: Set up proactive local speech recognition anyway if audio context fails
-      const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechReg) {
-        const recog = new SpeechReg();
-        recog.continuous = true;
-        recog.interimResults = true;
-        recog.lang = 'en-US';
-        recog.onresult = (e: any) => {
-          let interimTrans = '';
-          let finalTrans = '';
-          for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) {
-              finalTrans += e.results[i][0].transcript;
-            } else {
-              interimTrans += e.results[i][0].transcript;
-            }
-          }
-          setLiveTranscript((finalTrans || interimTrans).trim());
-        };
-        recognitionRef.current = recog;
-        recog.start();
-      }
+      startLocalSpeechRecognition();
 
       setIsRecording(true);
+    }
+  };
+
+  const startLocalSpeechRecognition = () => {
+    const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechReg) {
+      const recog = new SpeechReg();
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = 'en-US';
+      recog.onresult = (e: any) => {
+        let interimTrans = '';
+        let finalTrans = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            finalTrans += e.results[i][0].transcript;
+          } else {
+            interimTrans += e.results[i][0].transcript;
+          }
+        }
+        setLiveTranscript((finalTrans || interimTrans).trim());
+      };
+      recognitionRef.current = recog;
+      recog.start();
     }
   };
 
@@ -690,16 +669,13 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       setIsThinking(false);
       const errReply = "My teddy and I are dizzy! Can you simplify that more?";
       setMessages(p => [...p, { role: 'Mootion' as const, text: errReply }]);
-<<<<<<< HEAD
-      speakVoiceSynthesis(errReply);
-=======
     }
   };
 
   const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps: string[] | null) => {
     try {
-      let finalClassId = classId || resolvedClassId;
-      let finalChapterId = chapterId || resolvedChapterId;
+      let finalClassId = classId;
+      let finalChapterId = chapterId;
 
       if (!finalClassId || !finalChapterId) {
         const classes = await api.get('/students/classes');
@@ -721,7 +697,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
               return false;
             });
             if (!matchedChapter) {
-              matchedChapter = chapters.find((ch: any) => 
+              matchedChapter = chapters.find((ch: any) =>
                 ch.title.toLowerCase().includes(task.topic.toLowerCase()) ||
                 task.topic.toLowerCase().includes(ch.title.toLowerCase())
               );
@@ -748,12 +724,9 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
 
       const response = await api.post('/api/analytics/submit-explanation', payload);
 
-      if (response && response.concept_score_id) {
-        setAnalyticsResult(response);
-      }
+      // Analytics submitted successfully
     } catch (err) {
       console.error("Error submitting explanation for analysis:", err);
->>>>>>> d6f0006e592dd09fe48540af175dd1f3ab151f51
     }
   };
 
@@ -763,13 +736,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     setIsThinking(true);
 
     let predOutcome = "";
-<<<<<<< HEAD
-    if (activityName === 'Predict It' && predictionChoice) {
-      predOutcome = `Prediction choice: '${predictionChoice}', Actual outcome: 'Medium stone sank instantly while wooden block floated cleanly'.`;
-    }
-=======
     let finalEvalData: any = null;
->>>>>>> d6f0006e592dd09fe48540af175dd1f3ab151f51
 
     try {
       const resp = await fetch('/api/evaluate-session', {
@@ -808,13 +775,10 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       };
       finalEvalData = fallbackReport;
       setEvaluation(fallbackReport);
-<<<<<<< HEAD
       saveAttemptToStorage(finalTranscript, fallbackReport);
-=======
-      saveAttemptToStorage(transcriptToUse, fallbackReport);
     }
 
-    const studentText = transcriptToUse
+    const studentText = finalTranscript
       .filter(m => m.role === 'student')
       .map(m => m.text)
       .join(' ')
@@ -833,9 +797,8 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           console.error("Failed to submit interactive assignment:", err);
         });
       } else {
-        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId, finalEvalData?.gaps || null);
+        submitExplanationForAnalysis(studentText, null, null, finalEvalData?.gaps || null);
       }
->>>>>>> d6f0006e592dd09fe48540af175dd1f3ab151f51
     }
   };
 
@@ -1125,7 +1088,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
               type="button"
               onClick={() => {
                 setEvaluation(null);
-                setMessages([{ role: 'Mootion', text: `Let's practice again! Let's explain ${task.topic} once and see if we can do even better!` }]);
+                setMessages([]);
                 setQuestionsAnswered(0);
                 setActivePlayState(activityName === 'Predict It' ? 'prediction' : 'explaining');
               }}
@@ -1266,8 +1229,6 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
             </div>
           </div>
         )}
-
-
 
         <button
           onClick={() => triggerGradingEvaluation(messages)}
