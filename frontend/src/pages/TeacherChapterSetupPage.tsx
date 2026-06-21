@@ -803,19 +803,7 @@ export function TeacherChapterSetupPage() {
 
 
 
-                {/* Bottom CTA for Configuration Settings trigger */}
-                <div className="mt-8 border-t-2 border-[#1800ad]/15 pt-6 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setSuccess(false);
-                      setAssignError(null);
-                      setShowConfig(true);
-                    }}
-                    className="bg-[#1800ad] text-[#f6f4ee] py-4 px-10 rounded-full font-black text-sm uppercase tracking-widest hover:scale-102 transition-transform shadow-xl"
-                  >
-                    Assign To Class
-                  </button>
-                </div>
+
               </motion.div>
             )}
           </AnimatePresence>
