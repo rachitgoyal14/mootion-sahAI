@@ -534,7 +534,7 @@ export function TeacherTopicSetupPage() {
       </aside>
 
       {/* Main Container */}
-      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full relative flex flex-col font-montserrat min-h-[100dvh]">
+      <main className="flex-1 md:ml-[80px] lg:ml-[100px] bg-[#f6f4ee] md:rounded-l-[40px] lg:rounded-l-[50px] p-5 pb-32 md:pb-8 md:pl-10 lg:pl-12 xl:pl-16 md:pr-8 lg:pr-10 w-full relative flex flex-col font-montserrat min-h-[100dvh]">
         <div className="max-w-[1300px] w-full mx-auto flex-1 flex flex-col">
           {/* Back Link Header */}
           <div className="flex items-center gap-3 mb-6 shrink-0">

@@ -320,8 +320,10 @@ export default function ConnectItActivity({ task, onDone }: ConnectItActivityPro
     return (
       <div className={loadingClass}>
         <div className="w-12 h-12 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin mb-4" />
-        <p className="text-xl font-bold text-[#1800ad]">Generating matching pairs...</p>
-        <p className="text-sm text-[#1800ad]/70 mt-2">AI is creating a custom activity for you.</p>
+        <p className="text-xl font-bold text-[#1800ad] text-center">Designing Your Connect Challenge...</p>
+        <p className="text-sm text-[#1800ad]/70 mt-2 text-center max-w-xs leading-relaxed">
+          Our AI model is generating custom concepts and matching terms for your activity.
+        </p>
       </div>
     );
   }
