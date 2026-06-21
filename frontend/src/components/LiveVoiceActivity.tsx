@@ -611,7 +611,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
     }
   };
 
-  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null) => {
+  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps: string[] | null) => {
     try {
       let finalClassId = classId || resolvedClassId;
       let finalChapterId = chapterId || resolvedChapterId;
@@ -652,11 +652,16 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
         return;
       }
 
-      const response = await api.post('/api/analytics/submit-explanation', {
+      const payload: any = {
         transcript: transcriptText || "No student explanation provided.",
         chapter_id: finalChapterId,
         class_id: finalClassId
-      });
+      };
+      if (gaps && gaps.length > 0) {
+        payload.gaps = gaps;
+      }
+
+      const response = await api.post('/api/analytics/submit-explanation', payload);
 
       if (response && response.concept_score_id) {
         setAnalyticsResult(response);
@@ -696,6 +701,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
     }
 
     let predOutcome = "";
+    let finalEvalData: any = null;
 
     try {
       const resp = await fetch('/api/evaluate-session', {
@@ -710,6 +716,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
       });
 
       const evalData = await resp.json();
+      finalEvalData = evalData;
       setEvaluation(evalData);
       setIsThinking(false);
 
@@ -730,6 +737,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
         gaps: ["Can further describe Archimedes' specific relative mass density formulas"],
         feedback: "Wow! Thank you so much for teaching me! I feel super smart now. Let's study more building blocks later!",
       };
+      finalEvalData = fallbackReport;
       setEvaluation(fallbackReport);
       saveAttemptToStorage(transcriptToUse, fallbackReport);
     }
@@ -753,7 +761,7 @@ Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not
           console.error("Failed to submit interactive assignment:", err);
         });
       } else {
-        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId);
+        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId, finalEvalData?.gaps || null);
       }
     }
   };
