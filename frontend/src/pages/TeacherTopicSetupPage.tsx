@@ -29,7 +29,6 @@ import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
 const INTERACTIVE_ASSIGNMENT_TYPES = [
   { type: 'explain_ai', label: 'Explain It', icon: 'HelpCircle', desc: 'Student explains a topic to a curious 10-year-old AI, testing their understanding through teaching.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-  { type: 'predict_ai', label: 'Predict It', icon: 'Sliders', desc: 'Student predicts outcomes of scientific experiments before seeing the result, building hypothesis skills.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
   { type: 'spot_it', label: 'Spot It', icon: 'AlertCircle', desc: 'Student identifies real-world applications of scientific concepts through riddles and scenarios.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
   { type: 'interactive_quiz', label: 'Interactive Quiz', icon: 'HelpCircle', desc: 'Timed interactive quiz that tests knowledge with engaging multiple-choice questions.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
 ];
@@ -746,7 +745,7 @@ export function TeacherTopicSetupPage() {
                 <div className="bg-white p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-4">
                   <div className="border-b border-[#1800ad]/10 pb-2">
                     <h3 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">
-                      Interactive Live Preview
+                      PREDICT IT
                     </h3>
                   </div>
 

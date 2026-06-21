@@ -112,6 +112,8 @@ export function LiveVoiceActivity({
   const [simulationPercentage, setSimulationPercentage] = useState(0);
   const [predictionQuestion, setPredictionQuestion] = useState<string>('');
   const [predictionQuestionLoading, setPredictionQuestionLoading] = useState(false);
+  const [predictionOptions, setPredictionOptions] = useState<string[]>([]);
+  const [predictionCorrectAnswer, setPredictionCorrectAnswer] = useState<number | null>(null);
 
   // General Audio / Mic State
   const [isRecording, setIsRecording] = useState(false);
@@ -212,31 +214,65 @@ export function LiveVoiceActivity({
     const topics = getChapterTopics();
     const topicCtx = topics.map(t => `${t.title}: ${(t.source_snippet || '').slice(0, 200)}`).join('\n') || task.topic;
     setPredictionQuestionLoading(true);
+    const firstTopic = topics[0]?.title || task.topic;
     try {
       const resp = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `Generate a single yes/no prediction question about this chapter content to test the student's understanding of key concepts.
+          message: `Generate a single multiple-choice prediction question (MCQ) about this chapter content to test the student's understanding of key concepts. The question should challenge the student to predict a physical/chemical/mathematical behavior that can be observed or verified.
+Generate exactly 4 options. Specify which one is the correct option (0-based index).
 
 Chapter context:
 ${topicCtx}
 
-Output ONLY the question text. No emojis. No extra text.`,
-          context: 'You are generating a prediction question for a science learning activity.'
+You MUST return the output in this exact JSON format (no markdown, no backticks, no other text):
+{
+  "question": "The prediction question text",
+  "options": [
+    "Option A text",
+    "Option B text",
+    "Option C text",
+    "Option D text"
+  ],
+  "correctAnswer": 0
+}`,
+          context: 'You are generating a prediction multiple-choice question for a science learning activity.'
         })
       });
       const data = await resp.json();
-      const q = (data.text || '').trim();
-      if (q && !q.includes('GEMINI_API_KEY')) {
-        setPredictionQuestion(q);
-      } else {
-        const ft = topics[0]?.title || task.topic;
-        setPredictionQuestion(`Think about what you know about ${ft}. Do you think the core concepts will apply in a real-world scenario?`);
+      let text = (data.text || '').trim();
+      
+      // Clean up markdown code blocks if the model ignored instructions
+      if (text.startsWith('```json')) {
+        text = text.slice(7);
       }
-    } catch {
-      const ft = topics[0]?.title || task.topic;
-      setPredictionQuestion(`Think about what you know about ${ft}. Do you think the core concepts will apply in a real-world scenario?`);
+      if (text.startsWith('```')) {
+        text = text.slice(3);
+      }
+      if (text.endsWith('```')) {
+        text = text.slice(0, -3);
+      }
+      text = text.trim();
+
+      const parsed = JSON.parse(text);
+      if (parsed.question && Array.isArray(parsed.options) && parsed.options.length > 0) {
+        setPredictionQuestion(parsed.question);
+        setPredictionOptions(parsed.options);
+        setPredictionCorrectAnswer(typeof parsed.correctAnswer === 'number' ? parsed.correctAnswer : 0);
+      } else {
+        throw new Error("Invalid output format");
+      }
+    } catch (e) {
+      console.warn("Prediction question parsing failed, falling back to default MCQ", e);
+      setPredictionQuestion(`Based on what you know about ${firstTopic}, what do you predict will happen if we change the variables in the simulation?`);
+      setPredictionOptions([
+        "The simulation outcome will increase",
+        "The simulation outcome will decrease",
+        "The simulation outcome will double",
+        "The simulation outcome will remain unchanged"
+      ]);
+      setPredictionCorrectAnswer(1);
     }
     setPredictionQuestionLoading(false);
   }, [task]);
@@ -851,10 +887,13 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
 
     let predOutcome = "";
+    const correctText = (predictionCorrectAnswer !== null && predictionOptions[predictionCorrectAnswer]) || "";
+    const isPredictionCorrect = predictionChoice && correctText && predictionChoice === correctText;
+
     if (activityName === 'Predict It' && predictionChoice) {
       const topics = getChapterTopics();
       const ctx = topics.map(t => `${t.title}: ${(t.source_snippet || '').slice(0, 80)}`).join(' | ') || task.topic;
-      predOutcome = `Prediction question: "${predictionQuestion || 'N/A'}". Choice: '${predictionChoice === 'option_a' ? 'Yes' : 'No'}'. Chapter context: ${ctx}. The student predicted and needs to explain their reasoning.`;
+      predOutcome = `Prediction question: "${predictionQuestion || 'N/A'}". Student choice: '${predictionChoice}'. Correct answer: '${correctText}'. Result: ${isPredictionCorrect ? 'Correct' : 'Incorrect'}. Chapter context: ${ctx}. The student predicted and needs to explain their reasoning.`;
     }
 
     try {
@@ -889,7 +928,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
         strengths: ["Good understanding of key concepts", "Clear explanations provided"],
         gaps: ["Can add more detail to explanations", "Try connecting ideas together"],
         feedback: "Wow! Thank you so much for teaching me! I feel super smart now. Let's study more building blocks later!",
-        predictionAccuracy: activityName === 'Predict It' ? (predictionChoice ? 'Correct' as const : 'Incorrect' as const) : undefined
+        predictionAccuracy: activityName === 'Predict It' ? (isPredictionCorrect ? 'Correct' as const : 'Incorrect' as const) : undefined
       };
       setEvaluation(fallbackReport);
       saveAttemptToStorage(transcriptToUse, fallbackReport);
@@ -1165,7 +1204,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
             }`}>
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] uppercase tracking-wider font-extrabold opacity-70">Outcome Prediction</span>
-                <span className="font-bold text-xs">You predicted that the sphere would {predictionChoice}!</span>
+                <span className="font-bold text-xs">Your prediction: "{predictionChoice}"</span>
               </div>
               <span className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-full shadow-sm text-white ${
                 correctPredictions ? 'bg-emerald-500' : 'bg-amber-500'
@@ -1338,7 +1377,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
 
 
         {activePlayState === 'prediction' && (
-          <div className="flex flex-col gap-4 w-full max-w-xl items-center my-4 animate-fade-in text-center">
+          <div className="flex flex-col gap-4 w-full max-w-xl items-center my-4 animate-fade-in text-center px-4">
             {predictionQuestionLoading ? (
               <p className="text-white/70 font-semibold text-sm animate-pulse">
                 Generating prediction question...
@@ -1348,21 +1387,33 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
                 "{predictionQuestion || `Based on what you know about ${getChapterTopics().map(t => t.title).slice(0, 2).join(' and ') || task.topic}, what do you predict?`}"
               </p>
             )}
-            <div className="flex gap-4 mt-2 w-full max-w-sm justify-center">
-              <button 
-                type="button"
-                onClick={() => { setPredictionChoice('option_a'); setActivePlayState('simulation'); }} 
-                className="flex-1 py-4 bg-white hover:bg-[#f6f4ee] text-[#1800ad] hover:scale-103 font-bold rounded-2xl border-2 border-transparent transition-all shadow-md active:scale-95 text-xs uppercase font-black"
-              >
-                Yes
-              </button>
-              <button 
-                type="button"
-                onClick={() => { setPredictionChoice('option_b'); setActivePlayState('simulation'); }} 
-                className="flex-1 py-4 bg-white hover:bg-[#f6f4ee] text-[#1800ad] hover:scale-103 font-bold rounded-2xl border-2 border-transparent transition-all shadow-md active:scale-95 text-xs uppercase font-black"
-              >
-                No
-              </button>
+            <div className="flex flex-col gap-3 mt-4 w-full max-w-md">
+              {predictionOptions.map((opt, idx) => (
+                <button 
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setPredictionChoice(opt);
+                    const isCorrect = idx === predictionCorrectAnswer;
+                    setActivePlayState('explaining');
+                    setMessages(prev => [
+                      ...prev,
+                      { role: 'student', text: `I predict: ${opt}` },
+                      { role: 'Mootion', text: isCorrect
+                        ? "Wow! You predicted correctly! Can you explain the scientific reasoning behind it? Try checking it out in the simulation on the left!"
+                        : "Interesting prediction! Why do you think that will happen? Go ahead and test it out in the simulation on the left, then tell me what you see!"
+                      }
+                    ]);
+                    speakVoiceSynthesis(isCorrect
+                      ? "Wow! You predicted correctly! Can you explain the scientific reasoning behind it? Try checking it out in the simulation on the left!"
+                      : "Interesting prediction! Why do you think that will happen? Go ahead and test it out in the simulation on the left, then tell me what you see!"
+                    );
+                  }} 
+                  className="w-full py-3.5 px-5 bg-white hover:bg-[#f6f4ee] text-[#1800ad] hover:scale-[1.02] active:scale-[0.98] font-bold rounded-2xl border-2 border-transparent transition-all shadow-md text-sm text-left leading-normal"
+                >
+                  {opt}
+                </button>
+              ))}
             </div>
           </div>
         )}
