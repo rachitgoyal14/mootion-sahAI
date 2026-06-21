@@ -43,7 +43,7 @@ function QuizContent({ task }: { task: Task }) {
     }
 
     // Fallback to generating simulated quiz
-    fetch('/api/quiz', {
+    fetch('/bff/quiz', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subject: task.subject, topic: task.topic })
@@ -192,14 +192,8 @@ function VideoSimulationContent({ task }: { task: Task }) {
   if (!mediaUrl) {
     const mainJob = dbTask?.jobs?.[0];
     const assetId = mainJob?.asset_id || task.id;
-    const getBackendBaseUrl = () => {
-      if (typeof window !== 'undefined') {
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        return isLocalhost ? 'http://localhost:8000' : window.location.origin;
-      }
-      return 'http://localhost:8000';
-    };
-    mediaUrl = `${getBackendBaseUrl()}/media/assets/${assetId}`;
+    const BASE_URL = (import.meta as any).env?.VITE_API_URL || "/api";
+    mediaUrl = `${BASE_URL}/media/assets/${assetId}`;
   }
 
   // For mock tasks (no dbTask) we use a sample video

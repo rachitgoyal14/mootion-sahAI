@@ -1,7 +1,4 @@
-const BASE_URL = (typeof window !== 'undefined' && (window as any).NEXT_PUBLIC_API_URL) || 
-                 (import.meta as any).env?.VITE_NEXT_PUBLIC_API_URL || 
-                 (import.meta as any).env?.NEXT_PUBLIC_API_URL || 
-                 "http://localhost:8000";
+const BASE_URL = (import.meta as any).env?.VITE_API_URL || "/api";
 
 export class ApiError extends Error {
   status: number;

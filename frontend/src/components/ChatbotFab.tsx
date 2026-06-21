@@ -60,7 +60,7 @@ export function ChatbotFab({ context }: { context?: string }) {
     setInput('');
     const isHindi = getTranslationLanguage() === 'hi';
     try {
-      const response = await fetch('/api/chat', { 
+      const response = await fetch('/bff/chat', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: messageInput, context, lang: getTranslationLanguage() })

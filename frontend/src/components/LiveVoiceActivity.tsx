@@ -210,7 +210,7 @@ export function LiveVoiceActivity({
 
     try {
       // Attempt to use server TTS endpoint (fallback)
-      const res = await fetch('/api/tts', {
+      const res = await fetch('/bff/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
@@ -647,7 +647,7 @@ ${activityName === 'Connect It' ? "Acknowledge their explanation. Ask EXACTLY ON
 
 Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer to yourself as an AI.`;
 
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/bff/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: promptText })
@@ -725,7 +725,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
         payload.gaps = gaps;
       }
 
-      const response = await api.post('/api/analytics/submit-explanation', payload);
+      const response = await api.post('/analytics/submit-explanation', payload);
 
       // Analytics submitted successfully
     } catch (err) {
@@ -756,7 +756,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
 
     try {
-      const resp = await fetch('/api/evaluate-session', {
+      const resp = await fetch('/bff/evaluate-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

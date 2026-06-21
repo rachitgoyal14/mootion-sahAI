@@ -144,7 +144,7 @@ export default function ConnectItActivity({ task, onDone }: ConnectItActivityPro
       const topic = task.topic || 'science concept';
       const subject = task.subject || 'Science';
       const prompt = `Generate 8 pairs of related items for a "Connect It" matching activity on the topic: "${topic}" in subject "${subject}". Each pair should consist of a left item and a right item that are meaningfully related (e.g., term-definition, cause-effect, scenario-concept, etc.). The pairs should be appropriate for school students (grades 6-12). Return ONLY a valid JSON object with a "pairs" key containing an array of 8 objects, each with "left" and "right" strings. Example format: {"pairs": [{"left": "Photosynthesis", "right": "Process of converting light energy to chemical energy"}, ...]}`;
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/bff/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: prompt })

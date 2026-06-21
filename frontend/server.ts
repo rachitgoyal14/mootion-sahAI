@@ -76,7 +76,7 @@ async function generateContentWithFallback(params: {
 }
 
 
-app.post("/api/chat", async (req, res) => {
+app.post("/bff/chat", async (req, res) => {
   try {
     const { message, context, lang } = req.body;
     if (!message) {
@@ -139,7 +139,7 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
   }
 });
 
-app.post("/api/quiz", async (req, res) => {
+app.post("/bff/quiz", async (req, res) => {
   try {
     const { subject, topic, questionCount } = req.body;
     if (!subject || !topic) {
@@ -265,7 +265,7 @@ Ensure the response is valid JSON, do not include markdown blocks like \`\`\`jso
   }
 });
 
-app.post("/api/task-chat", async (req, res) => {
+app.post("/bff/task-chat", async (req, res) => {
   try {
     const { message, context } = req.body;
     if (!message) {
@@ -303,7 +303,7 @@ Provide helpful, encouraging, and concise answers related to their current task.
   }
 });
 
-app.post("/api/evaluate-session", async (req, res) => {
+app.post("/bff/evaluate-session", async (req, res) => {
   const { task, activityName, transcript, predictionOutcome } = req.body;
   try {
     if (!task || !activityName || !transcript) {
@@ -372,7 +372,7 @@ Make sure that you strictly output the JSON structure without any formatting pre
   }
 });
 
-const BACKEND_URL = process.env.BACKEND_API_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.BACKEND_API_URL || "http://backend:8000";
 
 async function proxyToFastAPI(req: express.Request, res: express.Response, targetPath: string) {
   try {
@@ -690,7 +690,7 @@ Never break character. Never refer to yourself as an AI. You are a mentor having
   });
 }
 
-app.post("/api/tts", async (req, res) => {
+app.post("/bff/tts", async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) {

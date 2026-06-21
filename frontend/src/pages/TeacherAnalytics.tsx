@@ -104,10 +104,10 @@ export function TeacherAnalytics() {
       setChapters(fetchedChapters);
 
       // 3. Fetch Overview
-      const overviewData: ClassOverviewItem[] = await api.get(`/api/analytics/class/${classId}/overview`);
+      const overviewData: ClassOverviewItem[] = await api.get(`/analytics/class/${classId}/overview`);
       
       // 4. Fetch Clusters
-      const clustersData: ClusterGroup[] = await api.get(`/api/analytics/class/${classId}/clusters`);
+      const clustersData: ClusterGroup[] = await api.get(`/analytics/class/${classId}/clusters`);
 
       // Resolve chapter titles
       const resolvedOverview = overviewData.map(item => {
@@ -160,12 +160,12 @@ export function TeacherAnalytics() {
     try {
       setRecomputingId(chapterId);
       // Calls POST /api/analytics/class/{classId}/compute-clusters with chapter_id
-      await api.post(`/api/analytics/class/${classId}/compute-clusters`, {
+      await api.post(`/analytics/class/${classId}/compute-clusters`, {
         chapter_id: chapterId
       });
       
       // Reload clusters and overview details
-      const freshClusters: ClusterGroup[] = await api.get(`/api/analytics/class/${classId}/clusters`);
+      const freshClusters: ClusterGroup[] = await api.get(`/analytics/class/${classId}/clusters`);
       const resolvedClusters = freshClusters.map(item => {
         const matched = chapters.find((ch: any) => ch.chapter_id === item.chapter_id);
         return {

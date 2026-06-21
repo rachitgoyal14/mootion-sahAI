@@ -90,7 +90,7 @@ export function StudentAnalytics() {
 
         if (activeStudentId) {
           // 2. Fetch scores
-          const scoresData: ChapterGroup[] = await api.get(`/api/analytics/student/${activeStudentId}/scores`);
+          const scoresData: ChapterGroup[] = await api.get(`/analytics/student/${activeStudentId}/scores`);
           
           // 3. Resolve chapter titles dynamically
           const resolvedData = await Promise.all(
