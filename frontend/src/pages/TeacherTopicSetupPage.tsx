@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
+import { LogoutModal } from '../components/LogoutModal';
 const INTERACTIVE_ASSIGNMENT_TYPES = [
   { type: 'explain_ai', label: 'Explain It', icon: 'HelpCircle', desc: 'Student explains a topic to a curious 10-year-old AI, testing their understanding through teaching.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
   { type: 'connect_it', label: 'Connect It', icon: 'BookOpen', desc: 'Student connects matching concept pairs and terms to solidify vocabulary and relations.', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -53,6 +54,23 @@ export const getSketchfabEmbedUrl = (url: string | null | undefined): string => 
 };
 
 export function TeacherTopicSetupPage() {
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [teacherName, setTeacherName] = useState<string>('Teacher');
+
+  useEffect(() => {
+    const fetchTeacherProfile = async () => {
+      try {
+        const user = await api.get('/teachers/me');
+        if (user && user.full_name) {
+          setTeacherName(user.full_name);
+        }
+      } catch (err) {
+        console.error("Failed to fetch teacher profile:", err);
+      }
+    };
+    fetchTeacherProfile();
+  }, []);
+
   const { classId, chapterId, topicId } = useParams<{ classId: string; chapterId: string; topicId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -479,6 +497,22 @@ export function TeacherTopicSetupPage() {
   return (
     <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
       
+      {/* Mobile Nav */}
+      <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-[#1800ad] px-6 py-2.5 flex justify-between items-center z-40 rounded-full border-[2px] border-[#f6f4ee] shadow-xl font-montserrat">
+        <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
+        <NavItem icon={<BookOpen size={24} />} active onClick={() => navigate(`/teacher/class/${classId}`)} />
+        <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(classId ? `/teacher/analytics/${classId}` : '/teacher/analytics')} />
+        <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
+        <div 
+          onClick={() => setIsLogoutModalOpen(true)}
+          className="shrink-0 cursor-pointer flex items-center justify-center w-8 h-8 rounded-full border border-[#f6f4ee] bg-[#f6f4ee] hover:opacity-90 transition-opacity"
+        >
+          <span className="text-[#1800ad] font-bold text-xs">
+            {teacherName ? teacherName[0].toUpperCase() : 'T'}
+          </span>
+        </div>
+      </nav>
+
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30 font-montserrat">
         <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/')}>
@@ -492,8 +526,10 @@ export function TeacherTopicSetupPage() {
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
 
-        <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
-          <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
+        <div onClick={() => setIsLogoutModalOpen(true)} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
+          <span className="text-[#1800ad] font-montserrat font-black text-lg">
+            {teacherName ? teacherName[0].toUpperCase() : 'T'}
+          </span>
         </div>
       </aside>
 
@@ -1058,10 +1094,7 @@ export function TeacherTopicSetupPage() {
                       className="flex-1 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full py-3.5 text-xs font-black uppercase tracking-widest text-center flex items-center justify-center gap-2"
                     >
                       {publishing ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
-                          <span>Publishing...</span>
-                        </>
+                        <span className="animate-pulse">Publishing...</span>
                       ) : (
                         <span>Publish</span>
                       )}
@@ -1352,6 +1385,8 @@ export function TeacherTopicSetupPage() {
         )}
       </AnimatePresence>
 
+      {/* MODAL: Logout Confirmation */}
+      <LogoutModal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} />
     </div>
   );
 }

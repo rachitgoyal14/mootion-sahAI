@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LogoutModal } from '../components/LogoutModal';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -94,6 +95,22 @@ const ASSET_TYPES_ORDER = [
 
 
 export function TeacherChapterSetupPage() {
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [teacherName, setTeacherName] = useState<string>('Teacher');
+
+  useEffect(() => {
+    const fetchTeacherProfile = async () => {
+      try {
+        const user = await api.get('/teachers/me');
+        if (user && user.full_name) {
+          setTeacherName(user.full_name);
+        }
+      } catch (err) {
+        console.error("Failed to fetch teacher profile:", err);
+      }
+    };
+    fetchTeacherProfile();
+  }, []);
   const { classId, chapterId } = useParams<{ classId: string, chapterId: string }>();
   const navigate = useNavigate();
 
@@ -349,7 +366,7 @@ export function TeacherChapterSetupPage() {
       case 'processing':
         return <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse whitespace-nowrap mt-1.5">Generating...</span>;
       case 'placeholder':
-        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap mt-1.5">Not set up yet</span>;
+        return null;
       case 'failed':
         return <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap mt-1.5">Unavailable</span>;
       default:
@@ -502,6 +519,14 @@ export function TeacherChapterSetupPage() {
         <NavItem icon={<BookOpen size={24} />} active onClick={() => navigate(`/teacher/class/${classId}`)} />
         <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(classId ? `/teacher/analytics/${classId}` : '/teacher/analytics')} />
         <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
+        <div 
+          onClick={() => setIsLogoutModalOpen(true)}
+          className="shrink-0 cursor-pointer flex items-center justify-center w-8 h-8 rounded-full border border-[#f6f4ee] bg-[#f6f4ee] hover:opacity-90 transition-opacity"
+        >
+          <span className="text-[#1800ad] font-bold text-xs">
+            {teacherName ? teacherName[0].toUpperCase() : 'T'}
+          </span>
+        </div>
       </nav>
 
       {/* Desktop Sidebar */}
@@ -515,8 +540,10 @@ export function TeacherChapterSetupPage() {
           <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate(classId ? `/teacher/analytics/${classId}` : '/teacher/analytics')} />
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
-        <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
-          <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
+        <div onClick={() => setIsLogoutModalOpen(true)} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
+          <span className="text-[#1800ad] font-montserrat font-black text-lg">
+            {teacherName ? teacherName[0].toUpperCase() : 'T'}
+          </span>
         </div>
       </aside>
 
@@ -552,9 +579,8 @@ export function TeacherChapterSetupPage() {
                 <h2 className="text-xl md:text-2xl font-black text-[#1800ad] tracking-tight">
                   Extracting Content...
                 </h2>
-                <p className="text-xs font-semibold text-[#1800ad]/70 mt-3 max-w-sm">
-                  Aligning curriculum automatically. Please hold on.
-                </p>
+
+
               </motion.div>
             ) : (
               /* REAL CHAPTER BUILDER PANEL */
@@ -802,19 +828,7 @@ export function TeacherChapterSetupPage() {
 
 
 
-                {/* Bottom CTA for Configuration Settings trigger */}
-                <div className="mt-8 border-t-2 border-[#1800ad]/15 pt-6 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setSuccess(false);
-                      setAssignError(null);
-                      setShowConfig(true);
-                    }}
-                    className="bg-[#1800ad] text-[#f6f4ee] py-4 px-10 rounded-full font-black text-sm uppercase tracking-widest hover:scale-102 transition-transform shadow-xl"
-                  >
-                    Assign To Class
-                  </button>
-                </div>
+
               </motion.div>
             )}
           </AnimatePresence>
@@ -916,10 +930,7 @@ export function TeacherChapterSetupPage() {
                           className="flex-1 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full py-3.5 text-xs font-black uppercase tracking-widest text-center flex items-center justify-center gap-2"
                         >
                           {publishing ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
-                              <span>Publishing...</span>
-                            </>
+                            <span className="animate-pulse">Publishing...</span>
                           ) : (
                             <span>Publish</span>
                           )}
@@ -1106,6 +1117,8 @@ export function TeacherChapterSetupPage() {
 
         </div>
       </main>
+      {/* MODAL: Logout Confirmation */}
+      <LogoutModal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} />
     </div>
   );
 }
