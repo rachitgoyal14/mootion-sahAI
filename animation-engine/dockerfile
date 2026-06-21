@@ -33,7 +33,8 @@ RUN useradd -m appuser
 
 RUN mkdir -p /app/app/outputs && \
     mkdir -p /app/app/media && \
-    chown -R appuser:appuser /app/app
+    mkdir -p /app/outputs && \
+    chown -R appuser:appuser /app
 
 USER appuser
 
