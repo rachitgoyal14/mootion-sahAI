@@ -305,7 +305,7 @@ export function TeacherTopicSetupPage() {
       const resp = await api.post(`/teachers/classes/${classId}/assignments`, {
         chapter_id: chapterId,
         assignment_type: assignmentType,
-        title: activeAsset.title,
+        title: activeTopicTitle,
         instructions: assignmentNotes,
       });
 
@@ -363,7 +363,7 @@ export function TeacherTopicSetupPage() {
   const [regenText, setRegenText] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
-  const [generationEndsAt, setGenerationEndsAt] = useState<number | null>(null);
+  const [generationEndsAt, setGenerationEndsAt] = useState<Record<string, number>>({});
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -372,8 +372,9 @@ export function TeacherTopicSetupPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const isGenerating = generationEndsAt !== null;
   const selectedAsset = activeAsset;
+  const activeAssetEndsAt = selectedAsset ? generationEndsAt[selectedAsset.asset_id] : undefined;
+  const isGenerating = activeAssetEndsAt !== undefined;
 
   // Check if payload_json is empty or minimal (scaffolding only)
   const isMinimalOrPlaceholder =
@@ -387,7 +388,6 @@ export function TeacherTopicSetupPage() {
   const updateTopicAsset = (nextAsset: any) => {
     setSelectedAssetId(nextAsset.asset_id);
     setActiveAsset(nextAsset);
-    setGenerationEndsAt(null);
     setGenerationError(null);
     if (activeTopic) {
       setTopicAssets(prev => prev.map(asset => asset.asset_id === nextAsset.asset_id ? nextAsset : asset));
@@ -398,22 +398,31 @@ export function TeacherTopicSetupPage() {
     if (!activeTopic || !selectedAsset || !classId || !chapterId) return;
 
     setGenerationError(null);
-    const estimatedSeconds = selectedAsset.asset_type === 'concept_video' ? 180 : selectedAsset.asset_type === 'simulation' ? 75 : 45;
-    setGenerationEndsAt(Date.now() + estimatedSeconds * 1000);
+    const estimatedSeconds = selectedAsset.asset_type === 'concept_video' ? 300 : selectedAsset.asset_type === 'simulation' ? 75 : 45;
+    const targetAssetId = selectedAsset.asset_id;
+
+    setGenerationEndsAt(prev => ({
+      ...prev,
+      [targetAssetId]: Date.now() + estimatedSeconds * 1000
+    }));
 
     try {
-      const response = await api.post(`/teachers/classes/${classId}/chapters/${chapterId}/topics/${activeTopic.topic_id}/assets/${selectedAsset.asset_id}/generate`, {
+      const response = await api.post(`/teachers/classes/${classId}/chapters/${chapterId}/topics/${activeTopic.topic_id}/assets/${targetAssetId}/generate`, {
         instructions: regenText.trim() || null,
         language: selectedLanguage,
       });
       const generatedAsset = response.asset || response;
       updateTopicAsset(generatedAsset);
       setRegenText('');
-      setGenerationEndsAt(null);
     } catch (err: any) {
       console.error('Failed to generate topic asset:', err);
       setGenerationError(err?.detail || err?.message || 'Generation failed.');
-      setGenerationEndsAt(null);
+    } finally {
+      setGenerationEndsAt(prev => {
+        const next = { ...prev };
+        delete next[targetAssetId];
+        return next;
+      });
     }
   };
 
@@ -506,7 +515,35 @@ export function TeacherTopicSetupPage() {
           ) : (
             <div className="w-full flex-1 flex flex-col gap-6">
 
-              {/* Header / Meta */}              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-5">
+              {/* Header / Meta */}              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-5 relative overflow-hidden">
+                {isGenerating && activeAsset.asset_type === 'concept_video' && activeAssetEndsAt !== undefined && (
+                  <div className="absolute inset-0 bg-[#fbfaf6]/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
+                    <Loader2 className="w-10 h-10 text-[#1800ad] animate-spin mb-4" />
+                    <h3 className="text-lg font-black text-[#1800ad] tracking-tight mb-1">
+                      Generating Concept Video...
+                    </h3>
+                    <p className="text-xs font-semibold text-[#1800ad]/75 mb-6">
+                      Mootion AI is rendering scenes, compiling animations, and stitching audio. Please wait.
+                    </p>
+                    
+                    {/* Progress Bar */}
+                    <div className="w-full max-w-md bg-[#1800ad]/10 h-3 rounded-full overflow-hidden border border-[#1800ad]/5 relative mb-2">
+                      <div 
+                        className="h-full rounded-full bg-[#1800ad] transition-all duration-1000"
+                        style={{ width: `${Math.min(100, Math.max(0, ((now - (activeAssetEndsAt - 300000)) / 300000) * 100))}%` }}
+                      />
+                    </div>
+                    
+                    <span className="text-xs font-black text-[#1800ad] font-mono">
+                      {(() => {
+                        const safeSeconds = Math.max(0, Math.ceil((activeAssetEndsAt - now) / 1000));
+                        const minutes = Math.floor(safeSeconds / 60);
+                        const remainingSeconds = safeSeconds % 60;
+                        return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s remaining`;
+                      })()}
+                    </span>
+                  </div>
+                )}
                 {/* Title & Assign Button Row */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#1800ad]/10 pb-4">
                   <div className="flex-1">
@@ -614,7 +651,13 @@ export function TeacherTopicSetupPage() {
 
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="text-[10px] font-black uppercase tracking-wider text-[#1800ad]/65">
-                      {isGenerating ? `Expected time left: ${Math.max(0, Math.ceil((generationEndsAt! - now) / 1000))}s` : 'Generation ETA depends on asset type'}
+                      {isGenerating && activeAssetEndsAt !== undefined ? `Expected time left: ${(() => {
+                        const safeSeconds = Math.max(0, Math.ceil((activeAssetEndsAt - now) / 1000));
+                        const minutes = Math.floor(safeSeconds / 60);
+                        const remainingSeconds = safeSeconds % 60;
+                        if (minutes === 0) return `${remainingSeconds}s`;
+                        return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+                      })()}` : 'Generation ETA depends on asset type'}
                     </div>
                     <div className="flex items-center gap-2">
                       {selectedAsset.asset_type === 'concept_video' && (
