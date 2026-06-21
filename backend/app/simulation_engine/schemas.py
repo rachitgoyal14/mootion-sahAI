@@ -115,6 +115,8 @@ class AssessmentPrompt(BaseModel):
     id: str
     type: str
     question: str
+    options: list[str] = Field(default_factory=list)
+    correct_answer: int = 0
     hint: str = ""
     difficulty: str = "medium"
     learning_goal: str = ""

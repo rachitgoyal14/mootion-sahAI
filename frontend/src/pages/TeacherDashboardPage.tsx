@@ -374,7 +374,7 @@ export function TeacherDashboardPage() {
                           {gradeClasses.length > 1 ? (
                             <div
                               className="relative"
-                              ref={(el) => (codeDropdownRefs.current[grade] = el)}
+                              ref={(el) => { codeDropdownRefs.current[grade] = el; }}
                             >
                               <button
                                 type="button"

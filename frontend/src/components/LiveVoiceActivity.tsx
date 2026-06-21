@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { 
@@ -28,7 +28,6 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { Task } from '../data/tasks';
-import { getTranslationLanguage } from '../lib/translation';
 
 // --- Shared Utilities for Audio ---
 function pcmToBase64(pcmData: Float32Array) {
@@ -106,12 +105,7 @@ export function LiveVoiceActivity({
 
   const fallbackTranscriptRef = useRef('');
 
-  const [activePlayState, setActivePlayState] = useState<'intro' | 'prediction' | 'simulation' | 'explaining' | 'grading'>('intro');
-  const [predictionChoice, setPredictionChoice] = useState<string | null>(null);
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [simulationPercentage, setSimulationPercentage] = useState(0);
-  const [predictionQuestion, setPredictionQuestion] = useState<string>('');
-  const [predictionQuestionLoading, setPredictionQuestionLoading] = useState(false);
+  const [activePlayState, setActivePlayState] = useState<'intro' | 'explaining' | 'grading'>('intro');
 
   // General Audio / Mic State
   const [isRecording, setIsRecording] = useState(false);
@@ -123,7 +117,6 @@ export function LiveVoiceActivity({
   const [messages, setMessages] = useState<{ role: 'student' | 'Mootion', text: string }[]>([]);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [textFallbackInput, setTextFallbackInput] = useState('');
-  const [useTextMode, setUseTextMode] = useState(false);
 
   // Counter of adaptive follow-up questions
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
@@ -137,7 +130,6 @@ export function LiveVoiceActivity({
     strengths: string[];
     gaps: string[];
     feedback: string;
-    predictionAccuracy?: 'Correct' | 'Incorrect' | 'Not Applicable';
   } | null>(null);
 
   // Audio queue & web references
@@ -175,26 +167,8 @@ export function LiveVoiceActivity({
   const audioQueue = useRef<Float32Array[]>([]);
   const isPlayingQueue = useRef(false);
 
-  // Extract chapter topic context from backend content_json
-  const getChapterTopics = (): { title: string; source_snippet: string }[] => {
-    const dbTask = (task as any).dbTask;
-    if (dbTask?.content_json?.topics && Array.isArray(dbTask.content_json.topics)) {
-      return dbTask.content_json.topics;
-    }
-    return [];
-  };
-
-  const getChapterTitle = (): string => {
-    const dbTask = (task as any).dbTask;
-    return dbTask?.content_json?.chapter_title || task.topic;
-  };
-
   // Get dynamic local summary for Explain It / topics
   const getSyllabusSummary = () => {
-    const topics = getChapterTopics();
-    if (topics.length > 0) {
-      return topics.map(t => t.title).join(", ");
-    }
     if (task.subject === 'Physics') {
       if (task.topic.toLowerCase().includes('buoyancy')) {
         return "Floating and Sinking principles, Archimedes' law of fluid upward upthrust, relative fluid densities, and gravitational pull balances on immersed objects.";
@@ -204,88 +178,28 @@ export function LiveVoiceActivity({
     if (task.subject === 'Chemistry') {
       return "Subatomic orbital balances, atomic nucleus isotopes, Electron group trends, chemical element reaction combinations, balanced redox formulations, and acid-base pH color indicators.";
     }
-    return "";
+    return "Polynomial factors, quadratic complex root grids, Unit circles trigonometry identities, differential derivative limits, or cell double-helix organelle mutations.";
   };
-
-  // Generate a contextual prediction question via LLM for Predict It
-  const generatePredictionQuestion = useCallback(async () => {
-    const topics = getChapterTopics();
-    const topicCtx = topics.map(t => `${t.title}: ${(t.source_snippet || '').slice(0, 200)}`).join('\n') || task.topic;
-    setPredictionQuestionLoading(true);
-    try {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `Generate a single yes/no prediction question about this chapter content to test the student's understanding of key concepts.
-
-Chapter context:
-${topicCtx}
-
-Output ONLY the question text. No emojis. No extra text.`,
-          context: 'You are generating a prediction question for a science learning activity.'
-        })
-      });
-      const data = await resp.json();
-      const q = (data.text || '').trim();
-      if (q && !q.includes('GEMINI_API_KEY')) {
-        setPredictionQuestion(q);
-      } else {
-        const ft = topics[0]?.title || task.topic;
-        setPredictionQuestion(`Think about what you know about ${ft}. Do you think the core concepts will apply in a real-world scenario?`);
-      }
-    } catch {
-      const ft = topics[0]?.title || task.topic;
-      setPredictionQuestion(`Think about what you know about ${ft}. Do you think the core concepts will apply in a real-world scenario?`);
-    }
-    setPredictionQuestionLoading(false);
-  }, [task]);
 
   // Init default introduction text based on activity mode
   useEffect(() => {
     let initialGreeting = "";
-    const isHindi = getTranslationLanguage() === 'hi';
     setAnalyticsResult(null);
-
-    const topics = getChapterTopics();
-    const chapterTitle = getChapterTitle();
-    const topicNames = topics.map(t => t.title);
-    const firstTopic = topicNames[0] || task.topic;
-
     if (activityName === 'Explain It') {
-      initialGreeting = isHindi 
-        ? "नमस्ते टीचर! आज हम क्या सीखने जा रहे हैं?" 
-        : "Hi teacher! What are we going to learn today?";
+      initialGreeting = `Teacher! I'm so excited to learn. Can you explain ${task.topic} to me like I'm a 10-year-old? I prepared some building blocks!`;
       setActivePlayState('explaining');
-    } else if (activityName === 'Predict It') {
-      const topicSnippet = topics.length > 0 && topics[0].source_snippet
-        ? topics[0].source_snippet.slice(0, 120)
-        : '';
-      const scenario = topicSnippet
-        ? `Here's the situation: ${topicSnippet}`
-        : `Think about what you know about ${firstTopic}`;
-      initialGreeting = `Ooh, prediction time! Today we're exploring ${firstTopic} in ${chapterTitle}. ${scenario} I have a question for you to predict! Make your choice below, then explain your reasoning!`;
-      setActivePlayState('prediction');
-      generatePredictionQuestion();
     } else if (activityName === 'Spot It') {
-      const spotTopic = topicNames.length > 0
-        ? topicNames[Math.floor(Math.random() * topicNames.length)]
-        : task.topic;
-      initialGreeting = `Teacher, look! I found a real-world puzzle about ${spotTopic}. Why does this happen? Explain the science behind it to me!`;
+      initialGreeting = `Teacher, look! I spotted a riddle in real life: "A giant ocean container ship of 100,000 tons floats perfectly, but my tiny paperclip sinks instantly." Why does this happen? Explain the physics forces to me!`;
       setActivePlayState('explaining');
     } else if (activityName === 'Connect It') {
-      const cards = topicNames.slice(0, 3);
-      if (cards.length > 0) {
-        initialGreeting = `Let's connect blocks! I have ${cards.length} cards for us: ${cards.join(', ')}. Can you explain how they all connect together in ${chapterTitle}?`;
-      } else {
-        initialGreeting = `Let's connect blocks about ${task.topic}! Can you connect the key ideas together and explain how they work?`;
-      }
+      initialGreeting = `Let's connect blocks! I have three cards for us: Upthrust Force, Liquid Density, and Immersed Volume. Can you explain how they all connect together physically?`;
       setActivePlayState('explaining');
     }
 
     setMessages([
       { role: 'Mootion', text: initialGreeting }
     ]);
+    speakVoiceSynthesis(initialGreeting);
   }, [activityName, task]);
 
   useEffect(() => {
@@ -332,13 +246,9 @@ Output ONLY the question text. No emojis. No extra text.`,
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, liveTranscript, liveModelTranscript, isThinking]);
 
-  // Clean-up speech, audio, and simulation timer on unmount
+  // Clean-up speech & audio contexts on unmount
   useEffect(() => {
     return () => {
-      if (simulationTimerRef.current) {
-        clearInterval(simulationTimerRef.current);
-        simulationTimerRef.current = null;
-      }
       stopAllAudioDevices();
     };
   }, []);
@@ -380,29 +290,7 @@ Output ONLY the question text. No emojis. No extra text.`,
       utterance.onend = () => setAiIsSpeaking(false);
       utterance.onerror = () => setAiIsSpeaking(false);
       
-      // Select Google/Microsoft natural voice for premium quality, less robotic
-      const voices = window.speechSynthesis.getVoices();
-      const isHindiText = /[\u0900-\u097F]/.test(text); // Check if text contains Hindi characters
-      const targetLang = isHindiText ? 'hi' : 'en';
-      const naturalVoice = voices.find(v => 
-        v.lang.startsWith(targetLang) && (
-          v.name.toLowerCase().includes('google') ||
-          v.name.toLowerCase().includes('natural') ||
-          v.name.toLowerCase().includes('aria') ||
-          v.name.toLowerCase().includes('jenny') ||
-          v.name.toLowerCase().includes('kalpana') ||
-          v.name.toLowerCase().includes('hemant') ||
-          v.name.toLowerCase().includes('hi-in')
-        )
-      ) || voices.find(v => v.lang.startsWith(targetLang)) || voices.find(v => v.lang.startsWith('en'));
-
-      if (naturalVoice) {
-        utterance.voice = naturalVoice;
-        utterance.pitch = 1.0; // keep premium voice natural
-      } else {
-        utterance.pitch = 1.15; // slightly friendly pitch if robotic fallback
-      }
-      
+      utterance.pitch = 1.35; // child-like friendly pitch
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     }
@@ -699,43 +587,17 @@ Output ONLY the question text. No emojis. No extra text.`,
 
     try {
       // Build clever context prompting for Mootion child dialog simulation
-      const topics = getChapterTopics();
-      const topicContext = topics.length > 0
-        ? topics.map(t => `- ${t.title}${t.source_snippet ? ': ' + t.source_snippet.slice(0, 100) : ''}`).join('\n')
-        : task.topic;
-      let promptText = `Dialogue History:
+      const promptText = `Dialogue History:
 ${messages.map(m => `${m.role}: ${m.text}`).join('\n')}
 Student: ${text}
 
-You are Mootion, a curious 15-year-old child who loves building blocks and exploring science.
+You are Mootion, a curious 10-year-old child who loves building blocks and exploring science.
 Explain mode: "${activityName}" on subject topic "${task.topic}" under class "${task.subject}".
-Chapter context:
-${topicContext}
-${activityName === 'Explain It' ? "Act completely amazed! Ask a naive, slightly innocent but clever question to challenge the student's concept statement." : ""}
-${activityName === 'Predict It' ? "Acknowledge their prediction choice. Ask them to explain the scientific reasoning behind their prediction and connect it back to the chapter concepts." : ""}
-${activityName === 'Spot It' ? "Ask one curious naive question about the real-world phenomenon and the underlying science." : ""}
-${activityName === 'Connect It' ? "Acknowledge their explanation. Ask one final question tying the concepts together." : ""}
+${activityName === 'Explain It' ? "Act completely amazed! Ask a naive, slightly innocent but clever question to challenge the student's physics/concept statement." : ""}
+${activityName === 'Spot It' ? "Ask one curious naive question about flotation balances and forces." : ""}
+${activityName === 'Connect It' ? "Acknowledge their explanation. Ask one final question tying density or gravity together." : ""}
 
 Respond in 1-2 charming sentences as Mootion. Maintain child-like wonder. Do not repeat greeting messages. Keep response highly concise.`;
-
-      if (activityName === 'Explain It') {
-        promptText = `Dialogue History:
-${messages.map(m => `${m.role}: ${m.text}`).join('\n')}
-Student: ${text}
-
-You are an expert, empathetic, and highly engaging tutor. Your goal is to help the user learn and deeply understand: "${task.topic}" under class "${task.subject}".
-Follow these core behaviors:
-1. Be Conversational & Natural: Speak like a friendly human mentor.
-2. Socratic Method: Ask guiding questions instead of just giving answers.
-3. Bite-Sized Information: Ask ONLY ONE question at a time to check understanding. NEVER ask multiple consecutive questions!
-4. Adapt to the User: Simplify if they struggle, advance if they understand.
-5. Use Vivid Analogies.
-
-Activity: ${activityName}
-${activityName === 'Explain It' ? "Follow up on the student's explanation with exactly ONE Socratic question to probe their logic." : ""}
-
-Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer to yourself as an AI.`;
-      }
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -766,7 +628,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
   };
 
-  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps?: string[]) => {
+  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null) => {
     try {
       let finalClassId = classId || resolvedClassId;
       let finalChapterId = chapterId || resolvedChapterId;
@@ -810,8 +672,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       const response = await api.post('/api/analytics/submit-explanation', {
         transcript: transcriptText || "No student explanation provided.",
         chapter_id: finalChapterId,
-        class_id: finalClassId,
-        ...(gaps && gaps.length > 0 ? { gaps } : {})
+        class_id: finalClassId
       });
 
       if (response && response.concept_score_id) {
@@ -852,13 +713,6 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
 
     let predOutcome = "";
-    if (activityName === 'Predict It' && predictionChoice) {
-      const topics = getChapterTopics();
-      const ctx = topics.map(t => `${t.title}: ${(t.source_snippet || '').slice(0, 80)}`).join(' | ') || task.topic;
-      predOutcome = `Prediction question: "${predictionQuestion || 'N/A'}". Choice: '${predictionChoice === 'option_a' ? 'Yes' : 'No'}'. Chapter context: ${ctx}. The student predicted and needs to explain their reasoning.`;
-    }
-
-    let geminiGaps: string[] | undefined;
 
     try {
       const resp = await fetch('/api/evaluate-session', {
@@ -876,8 +730,8 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       setEvaluation(evalData);
       setIsThinking(false);
 
-      if (Array.isArray(evalData.gaps) && evalData.gaps.length > 0) {
-        geminiGaps = evalData.gaps;
+      if (evalData.feedback) {
+        speakVoiceSynthesis(evalData.feedback);
       }
 
       // Save Attempt to localStorage history separating each attempt
@@ -889,10 +743,9 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
         understandingScore: 82,
         expressionScore: 85,
         reasoningScore: 85,
-        strengths: ["Good understanding of key concepts", "Clear explanations provided"],
-        gaps: ["Can add more detail to explanations", "Try connecting ideas together"],
+        strengths: ["Great descriptions of gravity balances", "Clearly defined buoyant force upward vectors"],
+        gaps: ["Can further describe Archimedes' specific relative mass density formulas"],
         feedback: "Wow! Thank you so much for teaching me! I feel super smart now. Let's study more building blocks later!",
-        predictionAccuracy: activityName === 'Predict It' ? (predictionChoice ? 'Correct' as const : 'Incorrect' as const) : undefined
       };
       setEvaluation(fallbackReport);
       saveAttemptToStorage(transcriptToUse, fallbackReport);
@@ -917,7 +770,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           console.error("Failed to submit interactive assignment:", err);
         });
       } else {
-        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId, geminiGaps);
+        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId);
       }
     }
   };
@@ -942,7 +795,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           understanding: evalResult.understandingScore || 80,
           expression: evalResult.expressionScore || evalResult.reasoningScore || 80,
           reasoning: evalResult.reasoningScore || 80,
-          accuracy: evalResult.predictionAccuracy || 'Not Applicable'
+          accuracy: 'Not Applicable'
         },
         strengths: evalResult.strengths || ["Great concept logic"],
         gaps: evalResult.gaps || ["No gaps spotted"],
@@ -961,106 +814,21 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
   };
 
-  const simulationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startSimulationPlayback = () => {
-    setSimulationRunning(true);
-    setSimulationPercentage(0);
-
-    const topics = getChapterTopics();
-    const topicNames = topics.map(t => t.title);
-    const contextStr = topicNames.length > 0 ? topicNames.slice(0, 2).join(' and ') : task.topic;
-
-    let progress = 0;
-    simulationTimerRef.current = setInterval(() => {
-      progress += 2.5;
-      if (progress >= 100) {
-        progress = 100;
-        setSimulationPercentage(100);
-        if (simulationTimerRef.current) clearInterval(simulationTimerRef.current);
-        simulationTimerRef.current = null;
-        setSimulationRunning(false);
-        setActivePlayState('explaining');
-
-        let alertResponse = `The concept analysis for ${contextStr} is complete! Now, can you explain the science behind your prediction? Why do you think the outcome turned out this way? Teach me!`;
-        setMessages(p => [...p, { role: 'Mootion', text: alertResponse }]);
-        speakVoiceSynthesis(alertResponse);
-        return;
-      }
-      setSimulationPercentage(progress);
-    }, 80);
-  };
-
-  const renderPredictSimulationBox = () => {
-    const topics = getChapterTopics();
-    const topicNames = topics.map(t => t.title);
-    const contextStr = topicNames.length > 0 ? topicNames.slice(0, 2).join(' and ') : task.topic;
-
-    return (
-      <div className="w-full max-w-xl bg-white rounded-3xl p-6 border-2 border-[#1800ad]/10 shadow-inner flex flex-col items-center gap-5 animate-fade-in my-4">
-        <h4 className="font-bold text-center text-[#1800ad] text-base uppercase tracking-wider">
-          Simulation: {contextStr}
-        </h4>
-
-        <div className="w-full bg-gradient-to-br from-indigo-50 to-white rounded-2xl border-2 border-[#1800ad]/10 flex flex-col items-center justify-center gap-3 py-8 px-6">
-          {/* Large percentage */}
-          <div className="text-6xl font-black text-[#1800ad] font-mono tracking-tight">
-            {Math.round(simulationPercentage)}
-            <span className="text-2xl ml-0.5">%</span>
-          </div>
-
-          {/* Progress bar */}
-          <div className="w-full max-w-xs h-4 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-[#1800ad] to-[#4a3aff] rounded-full transition-none"
-              style={{ width: `${simulationPercentage}%` }}
-            />
-          </div>
-
-          {/* Status */}
-          <p className="text-sm text-[#1800ad]/70 font-semibold">
-            {simulationRunning
-              ? `Analyzing ${contextStr}...`
-              : 'Press Run Simulation to start'}
-          </p>
-        </div>
-
-        <button
-          onClick={startSimulationPlayback}
-          disabled={simulationRunning}
-          className="px-7 py-2.5 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full font-bold text-sm transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 flex items-center gap-2 shadow-md"
-        >
-          <PlayCircle size={16} className="stroke-[3]" />
-          {simulationRunning ? `Analyzing ${Math.round(simulationPercentage)}%...` : 'Run Simulation'}
-        </button>
-      </div>
-    );
-  };
 
   const renderSpotItContextCard = () => {
-    const topics = getChapterTopics();
-    const spotTopic = topics.length > 0
-      ? topics[Math.floor(Math.random() * topics.length)]
-      : null;
-    const title = spotTopic?.title || task.topic;
-    const snippet = spotTopic?.source_snippet
-      ? spotTopic.source_snippet.length > 120
-        ? spotTopic.source_snippet.slice(0, 120) + '...'
-        : spotTopic.source_snippet
-      : `Explore how the concepts in ${title} apply to the real world around us.`;
-
     return (
       <div className="w-full max-w-xl bg-white rounded-2xl p-5 border-2 border-[#1800ad]/15 shadow-md flex items-start gap-4 mb-3 animate-fade-in">
         <div className="p-3 bg-amber-500/20 text-amber-700 rounded-full">
           <Sparkles size={24} />
         </div>
         <div className="flex flex-col text-left">
-          <span className="text-[10px] font-extrabold text-[#1800ad]/50 uppercase tracking-widest">Real-World Phenomenon</span>
+          <span className="text-[10px] font-extrabold text-[#1800ad]/50 uppercase tracking-widest">Eerie Phenomenon Case</span>
           <h4 className="font-bold text-base text-[#1800ad] leading-snug mt-1">
-            "{snippet}"
+            "An iron cargo battleship weighing 100,000 tons floats effortlessly in deep seawater, yet a minute 1-gram needle slips straight to the ocean floor."
           </h4>
           <p className="text-xs text-[#1800ad]/70 mt-1.5 font-medium">
-            Explain the science behind {title}. Teach Mootion!
+            Explain which properties of displaced relative mass volumes account for this. Teach Mootion!
           </p>
         </div>
       </div>
@@ -1068,20 +836,11 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
   };
 
   const renderConnectItConceptDeck = () => {
-    const topics = getChapterTopics();
-    const cards = topics.length > 0
-      ? topics.slice(0, 3).map((t, i) => ({
-          t: t.title,
-          d: t.source_snippet
-            ? (t.source_snippet.length > 80 ? t.source_snippet.slice(0, 80) + '...' : t.source_snippet)
-            : `Key concept in ${getChapterTitle()}`,
-          icon: i === 0 ? <Award size={18} /> : i === 1 ? <Beaker size={18} /> : <Target size={18} />
-        }))
-      : [
-          { t: "Core Principle", d: `The fundamental idea behind ${task.topic}`, icon: <Award size={18} /> },
-          { t: "Key Mechanism", d: `How ${task.topic} works in practice`, icon: <Beaker size={18} /> },
-          { t: "Real-World Link", d: `Where ${task.topic} appears in everyday life`, icon: <Target size={18} /> }
-        ];
+    const cards = [
+      { t: "Upthrust force", d: "The buoyant vertical mechanical push of fluid weight.", icon: <Award size={18} /> },
+      { t: "Fluid density", d: "Specific mass density determining relative buoyancy indices.", icon: <Beaker size={18} /> },
+      { t: "Displaced Volume", d: "The physical dimensional space the immersed object moves.", icon: <Target size={18} /> }
+    ];
 
     return (
       <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xl mb-4 animate-fade-in">
@@ -1115,7 +874,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       );
     }
 
-    const correctPredictions = evaluation?.predictionAccuracy === 'Correct';
+
 
     return (
       <div className="flex-1 w-full bg-[#1800ad] rounded-[32px] p-6 md:p-8 flex flex-col items-center justify-center relative shadow-xl overflow-hidden min-h-[calc(100vh-80px)] md:min-h-0 md:h-full">
@@ -1126,32 +885,182 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           <X size={26} className="stroke-[2.5]" />
         </button>
 
-        <div className="bg-white p-8 md:p-12 rounded-[32px] shadow-2xl w-full max-w-lg flex flex-col items-center text-center relative z-10 border border-[#1800ad]/15">
-          <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full mb-6 shadow-sm">
-            <CheckCircle2 size={48} className="stroke-[2.5]" />
+        <header className="text-center relative z-10 w-full max-w-2xl flex flex-col items-center gap-1 mt-4">
+          <div className="p-3 bg-emerald-500/25 text-emerald-300 rounded-full mb-2 shadow-lg">
+            <Award size={32} />
           </div>
-          
-          <h1 className="text-3xl font-black text-[#1800ad] mb-2 tracking-wide font-val" style={{ textShadow: '1px 1px 0 rgba(0,0,0,0.1)' }}>
-            Thanks for completing this task!
+          <h1 className="text-3xl md:text-5xl font-val text-white tracking-widest" style={{ textShadow: '3px 3px 0 #000' }}>
+            EVALUATION COMPLETE
           </h1>
-          <p className="text-lg font-bold text-[#1800ad]/70 mb-6">
-            You did well!
-          </p>
+          <h2 className="text-sm md:text-base font-bold text-white/80">{activityName} Log • {task.topic}</h2>
+        </header>
 
-          {evaluation?.gaps && evaluation.gaps.length > 0 && (
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-8 w-full">
-              <p className="text-sm text-[#1800ad]/80 font-semibold leading-relaxed">
-                Keep practicing — you're building strong understanding!
-              </p>
+        <div className="bg-white p-6 md:p-8 rounded-[28px] shadow-2xl w-full max-w-2xl flex flex-col gap-6 mt-6 relative z-10 border border-[#1800ad]/15 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
+              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">Conceptual Understanding</span>
+              <span className="text-3xl font-black text-[#1800ad]">{evaluation?.understandingScore}%</span>
+              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
+                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.understandingScore}%` }}></div>
+              </div>
+            </div>
+
+            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
+              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">
+                {activityName === 'Explain It' ? 'Verbal Expression' : 'Scientific Reasoning'}
+              </span>
+              <span className="text-3xl font-black text-[#1800ad]">
+                {evaluation?.expressionScore || evaluation?.reasoningScore || 80}%
+              </span>
+              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
+                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.expressionScore || evaluation?.reasoningScore || 82}%` }}></div>
+              </div>
+            </div>
+          </div>
+
+
+
+          {evaluation?.feedback && (
+            <div className="bg-blue-50 border border-blue-100 rounded-[20px] p-4 flex items-start gap-3 text-left">
+              <span className="text-xl shrink-0">💬</span>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-black text-[#1800ad]/60 uppercase tracking-wider">Mootion's Audit Report</span>
+                <p className="text-xs text-[#1800ad]/80 italic font-semibold leading-relaxed mt-1">
+                  "{evaluation.feedback}"
+                </p>
+              </div>
             </div>
           )}
 
-          <button 
-            onClick={() => navigate('/student/playground')}
-            className="w-full py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all text-lg"
-          >
-            Go to Playground
-          </button>
+          {analyticsResult && (
+            <div className="bg-[#f0f4ff] border-2 border-[#1800ad]/20 rounded-[24px] p-5 flex flex-col gap-4 text-left shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">✨</span>
+                <span className="font-black text-xs text-[#1800ad] uppercase tracking-widest font-mono">
+                  Conceptual Explanation Evaluation (Attempt #{analyticsResult.attempt_number})
+                </span>
+              </div>
+              
+              <div className="flex flex-col gap-3">
+                {/* Clarity score bar */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
+                    <span>Clarity</span>
+                    <span>{analyticsResult.clarity_score}/10</span>
+                  </div>
+                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-500 ${
+                        analyticsResult.clarity_score > 7 ? 'bg-emerald-500' : analyticsResult.clarity_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
+                      }`} 
+                      style={{ width: `${analyticsResult.clarity_score * 10}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Accuracy score bar */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
+                    <span>Accuracy</span>
+                    <span>{analyticsResult.accuracy_score}/10</span>
+                  </div>
+                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-500 ${
+                        analyticsResult.accuracy_score > 7 ? 'bg-emerald-500' : analyticsResult.accuracy_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
+                      }`} 
+                      style={{ width: `${analyticsResult.accuracy_score * 10}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Depth score bar */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
+                    <span>Depth</span>
+                    <span>{analyticsResult.depth_score}/10</span>
+                  </div>
+                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-500 ${
+                        analyticsResult.depth_score > 7 ? 'bg-emerald-500' : analyticsResult.depth_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
+                      }`} 
+                      style={{ width: `${analyticsResult.depth_score * 10}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              {analyticsResult.llm_feedback && (
+                <div className="bg-white border border-[#1800ad]/10 rounded-xl p-3 text-xs text-[#1800ad]/80 leading-relaxed font-semibold">
+                  {analyticsResult.llm_feedback}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => navigate('/student/analytics')}
+                className="w-full py-2.5 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full font-black text-xs uppercase tracking-wider shadow transition-all hover:scale-101 active:scale-99"
+              >
+                View Full Analytics
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-4 text-left">
+            <div className="flex flex-col gap-2">
+              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                Key Conceptual Strengths
+              </h5>
+              <div className="flex flex-wrap gap-1.5">
+                {evaluation?.strengths?.map((str, idx) => (
+                  <span key={idx} className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-3 py-1 font-bold text-xs rounded-full">
+                    {str}
+                  </span>
+                )) || <span className="text-xs text-gray-500">No strengths logged.</span>}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 mt-1">
+              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
+                <Target size={14} className="text-amber-500" />
+                Gaps & Misconceptions Detected
+              </h5>
+              <div className="flex flex-col gap-1.5">
+                {evaluation?.gaps?.map((gap, idx) => (
+                  <div key={idx} className="bg-amber-50 text-amber-950 border border-amber-100 px-3 py-2 font-semibold text-xs rounded-xl flex items-start gap-1.5">
+                    <span className="text-xs text-amber-600 mt-0.5">•</span>
+                    <span>{gap}</span>
+                  </div>
+                )) || <p className="text-xs font-bold text-emerald-600 bg-emerald-50 p-3 rounded-xl w-full text-center">Perfect understanding! No learning gaps detected.</p>}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-[#1800ad]/10">
+            <button 
+              type="button"
+              onClick={() => {
+                setEvaluation(null);
+                setAnalyticsResult(null);
+                setMessages([{ role: 'Mootion', text: `Let's practice again! Let's explain ${task.topic} once and see if we can do even better!` }]);
+                setQuestionsAnswered(0);
+                setActivePlayState('explaining');
+              }} 
+              className="px-5 py-2.5 rounded-full font-bold border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors text-xs"
+            >
+              Try Again
+            </button>
+            <button 
+              type="button"
+              onClick={onDone} 
+              className="px-5 py-2.5 rounded-full font-bold bg-[#1800ad] text-white hover:bg-[#1800ad]/90 transition-colors shadow-md text-xs"
+            >
+              Completed Done
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1168,43 +1077,23 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           {activityName.toUpperCase()}
         </h1>
         <h2 className="text-base md:text-lg font-bold text-white mt-1.5 uppercase tracking-wide opacity-90">{task.topic}</h2>
+        <div className="inline-block mt-2 px-3 py-1 bg-white/10 text-white rounded-full text-[10px] font-black uppercase tracking-wider border border-white/15">
+          {task.subject} Syllabus Chapter Core Activity
+        </div>
       </header>
 
       <div className="flex w-full mt-4 flex-col items-center justify-center relative z-10">
         
-
-
-        {activePlayState === 'prediction' && (
-          <div className="flex flex-col gap-4 w-full max-w-xl items-center my-4 animate-fade-in text-center">
-            {predictionQuestionLoading ? (
-              <p className="text-white/70 font-semibold text-sm animate-pulse">
-                Generating prediction question...
-              </p>
-            ) : (
-              <p className="text-white font-bold text-base max-w-md leading-snug">
-                "{predictionQuestion || `Based on what you know about ${getChapterTopics().map(t => t.title).slice(0, 2).join(' and ') || task.topic}, what do you predict?`}"
-              </p>
-            )}
-            <div className="flex gap-4 mt-2 w-full max-w-sm justify-center">
-              <button 
-                type="button"
-                onClick={() => { setPredictionChoice('option_a'); setActivePlayState('simulation'); }} 
-                className="flex-1 py-4 bg-white hover:bg-[#f6f4ee] text-[#1800ad] hover:scale-103 font-bold rounded-2xl border-2 border-transparent transition-all shadow-md active:scale-95 text-xs uppercase font-black"
-              >
-                Yes
-              </button>
-              <button 
-                type="button"
-                onClick={() => { setPredictionChoice('option_b'); setActivePlayState('simulation'); }} 
-                className="flex-1 py-4 bg-white hover:bg-[#f6f4ee] text-[#1800ad] hover:scale-103 font-bold rounded-2xl border-2 border-transparent transition-all shadow-md active:scale-95 text-xs uppercase font-black"
-              >
-                No
-              </button>
-            </div>
+        {activePlayState === 'explaining' && (
+          <div className="w-full max-w-xl bg-white/10 border border-white/15 rounded-2xl p-4 text-white text-left mb-4 animate-fade-in">
+            <span className="font-extrabold text-[10px] uppercase text-white/60 tracking-wider font-mono">Chapter Summary Context</span>
+            <p className="text-xs font-semibold leading-relaxed mt-1 text-white/95">
+              {getSyllabusSummary()}
+            </p>
           </div>
         )}
 
-        {activePlayState === 'simulation' && renderPredictSimulationBox()}
+
 
         {activityName === 'Spot It' && activePlayState === 'explaining' && renderSpotItContextCard()}
 
@@ -1226,67 +1115,25 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
 
         {activePlayState === 'explaining' && (
           <div className="flex flex-col items-center justify-center gap-4">
-            {useTextMode ? (
-              <div className="flex flex-col items-center gap-3 w-full max-w-lg">
-                <textarea
-                  value={textFallbackInput}
-                  onChange={(e) => setTextFallbackInput(e.target.value)}
-                  placeholder="Type your explanation here..."
-                  rows={5}
-                  className="w-full bg-white text-[#1800ad] placeholder-[#1800ad]/40 border-2 border-[#1800ad]/20 rounded-2xl p-4 text-sm font-semibold focus:outline-none focus:border-[#1800ad] resize-none"
-                />
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => { setUseTextMode(false); setTextFallbackInput(''); }}
-                    className="px-4 py-2 border-2 border-white/30 text-white rounded-full text-xs font-black uppercase tracking-wider hover:bg-white/10 transition-colors"
-                  >
-                    Use Mic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!textFallbackInput.trim()) return;
-                      setMessages(prev => [...prev, { role: 'student', text: textFallbackInput.trim() }]);
-                      setTextFallbackInput('');
-                      setUseTextMode(false);
-                    }}
-                    disabled={!textFallbackInput.trim()}
-                    className="px-6 py-2 bg-white text-[#1800ad] rounded-full text-xs font-black uppercase tracking-wider hover:bg-[#f6f4ee] transition-colors disabled:opacity-50"
-                  >
-                    Submit Explanation
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3">
-                <div className="relative flex items-center justify-center">
-                  {isRecording && (
-                    <>
-                      <div className="absolute w-36 h-36 bg-white/25 rounded-full animate-ping" style={{ animationDuration: '2.5s' }}></div>
-                      <div className="absolute w-28 h-28 bg-white/15 rounded-full animate-pulse" style={{ animationDuration: '1.2s' }}></div>
-                    </>
-                  )}
+            <div className="relative flex items-center justify-center">
+              
+              {isRecording && (
+                <>
+                  <div className="absolute w-36 h-36 bg-white/25 rounded-full animate-ping" style={{ animationDuration: '2.5s' }}></div>
+                  <div className="absolute w-28 h-28 bg-white/15 rounded-full animate-pulse" style={{ animationDuration: '1.2s' }}></div>
+                </>
+              )}
 
-                  <button 
-                    type="button"
-                    onClick={toggleRecording}
-                    disabled={isThinking}
-                    className={`w-24 h-24 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl duration-300 relative z-10 bg-white text-[#1800ad] disabled:opacity-50 ${isRecording ? 'animate-pulse' : ''}`}
-                    title={isRecording ? "Stop and Submit Voice" : "Start Speaking"}
-                  >
-                    <Mic size={40} className="text-[#1800ad]" />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setUseTextMode(true)}
-                  className="text-white/60 hover:text-white text-[11px] font-semibold underline underline-offset-2 transition-colors"
-                >
-                  or type your answer
-                </button>
-              </div>
-            )}
+              <button 
+                type="button"
+                onClick={toggleRecording}
+                disabled={isThinking}
+                className={`w-24 h-24 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl duration-300 relative z-10 bg-white text-[#1800ad] disabled:opacity-50 ${isRecording ? 'animate-pulse' : ''}`}
+                title={isRecording ? "Stop and Submit Voice" : "Start Speaking"}
+              >
+                <Mic size={40} className="text-[#1800ad]" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1484,16 +1331,7 @@ export function AttemptHistoryPanel({ taskId }: { taskId: string }) {
                       </span>
                     </div>
 
-                    {log.activityName === 'Predict It' && (
-                      <div className="flex flex-col border-l border-[#1800ad]/10 pl-4">
-                        <span className="text-[9px] font-extrabold text-[#1800ad]/50 uppercase tracking-widest font-mono">Prediction</span>
-                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full font-mono ${
-                          log.scores.accuracy === 'Correct' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {log.scores.accuracy}
-                        </span>
-                      </div>
-                    )}
+
                   </div>
 
                   <div className="flex items-center gap-1 pl-4 border-l border-[#1800ad]/10">

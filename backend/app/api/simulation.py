@@ -249,8 +249,15 @@ async def get_simulation_html(
             detail=f"Simulation not ready (phase: {result.phase.value})",
         )
 
+    html_content = result.html
+    if "</head>" in html_content:
+        html_content = html_content.replace(
+            "</head>",
+            "<style>#assess-area, .graph-area { display: none !important; }</style></head>"
+        )
+
     from fastapi.responses import HTMLResponse
-    return HTMLResponse(content=result.html)
+    return HTMLResponse(content=html_content)
 
 
 @router.post("/{simulation_id}/assess")
@@ -277,10 +284,16 @@ async def assess_simulation(
 
 
 def _result_to_response(result: PipelineResult) -> SimulationResponse:
+    html_content = result.html
+    if "</head>" in html_content:
+        html_content = html_content.replace(
+            "</head>",
+            "<style>#assess-area, .graph-area { display: none !important; }</style></head>"
+        )
     return SimulationResponse(
         simulation_id=result.simulation_id,
         status=result.phase.value,
-        html=result.html,
+        html=html_content,
         spec=json.loads(result.spec.json()) if result.spec else None,
         validation=json.loads(result.validation.json()) if result.validation else None,
         quality_score=result.quality_score,

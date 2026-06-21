@@ -80,11 +80,6 @@ const formatDuration = (seconds: number) => {
   return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
 };
 
-const toSentenceCase = (str: string) => {
-  if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1);
-};
-
 const ASSET_TYPES_ORDER = [
   'concept_video',
   'simulation',
@@ -96,6 +91,8 @@ const ASSET_TYPES_ORDER = [
   'connect_it'
 ];
 
+
+
 export function TeacherChapterSetupPage() {
   const { classId, chapterId } = useParams<{ classId: string, chapterId: string }>();
   const navigate = useNavigate();
@@ -106,12 +103,8 @@ export function TeacherChapterSetupPage() {
   const [specialNote, setSpecialNote] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [pendingQuizId, setPendingQuizId] = useState<string | null>(null);
-  const [quizPreviewData, setQuizPreviewData] = useState<any | null>(null);
-  const [approving, setApproving] = useState(false);
   const [resolvedChapter, setResolvedChapter] = useState<any | null>(null);
   const [resolvedClass, setResolvedClass] = useState<any | null>(null);
-  const [teacherName, setTeacherName] = useState<string>('Teacher');
 
   // Active custom regenerate instructions
   const [regenText, setRegenText] = useState<Record<string, string>>({});
@@ -120,17 +113,6 @@ export function TeacherChapterSetupPage() {
   const [now, setNow] = useState(() => Date.now());
 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [loadingPhase, setLoadingPhase] = useState<'extracting' | 'curriculum'>('extracting');
-
-  useEffect(() => {
-    if (isLoading) {
-      setLoadingPhase('extracting');
-      const timer = setTimeout(() => {
-        setLoadingPhase('curriculum');
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading]);
 
   // ─── Content Library state ────────────────────────────────────────────────
   const [showLibrary, setShowLibrary] = useState(false);
@@ -141,21 +123,6 @@ export function TeacherChapterSetupPage() {
   const [libraryPreview, setLibraryPreview] = useState<string | null>(null);
   const [adopting, setAdopting] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
-  const [openLangDropdownId, setOpenLangDropdownId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchTeacherProfile = async () => {
-      try {
-        const user = await api.get('/teachers/me');
-        if (user && user.full_name) {
-          setTeacherName(user.full_name);
-        }
-      } catch (err) {
-        console.error("Failed to fetch teacher profile:", err);
-      }
-    };
-    fetchTeacherProfile();
-  }, []);
 
   // Fetch chapter details and map assets
   useEffect(() => {
@@ -243,9 +210,11 @@ export function TeacherChapterSetupPage() {
         console.log("Fetched chapter details on chapter detail page:", data);
         if (data && data.topics && data.topics.length > 0) {
           setActivities(data.topics.map((topic: any) => {
-            const assets = [...(topic.assets || [])].sort((a: any, b: any) => {
-              return ASSET_TYPES_ORDER.indexOf(a.asset_type) - ASSET_TYPES_ORDER.indexOf(b.asset_type);
-            });
+            const assets = [...(topic.assets || [])]
+              .filter((a: any) => !['predict_it', 'spot_it'].includes(a.asset_type))
+              .sort((a: any, b: any) => {
+                return ASSET_TYPES_ORDER.indexOf(a.asset_type) - ASSET_TYPES_ORDER.indexOf(b.asset_type);
+              });
             const readyCount = assets.filter((asset: any) => asset.generation_status === 'ready').length;
             return {
               id: topic.topic_id,
@@ -268,15 +237,19 @@ export function TeacherChapterSetupPage() {
             };
           }));
         } else if (data && data.assets) {
-          const orderedAssets = [...data.assets].sort((a: any, b: any) => {
-            return ASSET_TYPES_ORDER.indexOf(a.asset_type) - ASSET_TYPES_ORDER.indexOf(b.asset_type);
-          });
+          const orderedAssets = [...data.assets]
+            .filter((a: any) => !['predict_it', 'spot_it'].includes(a.asset_type))
+            .sort((a: any, b: any) => {
+              return ASSET_TYPES_ORDER.indexOf(a.asset_type) - ASSET_TYPES_ORDER.indexOf(b.asset_type);
+            });
 
           setActivities(orderedAssets.map((asset: any) => ({
             id: asset.asset_id,
             asset_type: asset.asset_type,
-            title: asset.title,
-            desc: asset.description || `Interactive ${asset.asset_type.replace('_', ' ')} module.`,
+            title: asset.asset_type === 'simulation' ? 'Predict It' : asset.title,
+            desc: asset.asset_type === 'simulation' 
+              ? 'Interactive simulation module where students can observe outcomes and practice predictions.' 
+              : (asset.description || `Interactive ${asset.asset_type.replace('_', ' ')} module.`),
             previewText: asset.payload_json?.instructions || asset.payload_json?.previewText || `Outline for ${asset.title}.`,
             generation_status: asset.generation_status,
             external_url: asset.external_url,
@@ -307,12 +280,6 @@ export function TeacherChapterSetupPage() {
       const params = new URLSearchParams({ asset_type: 'concept_video', limit: '100' });
       if (grade) params.append('grade', grade);
       if (subject) params.append('subject', subject);
-
-      const topicTitle = asset.asset_type === 'topic' ? asset.title : (asset.payload_json?.topic_title || asset.title);
-      if (topicTitle) {
-        params.append('topic_title', topicTitle);
-      }
-
       const data = await api.get(`/teachers/library/assets?${params.toString()}`);
       setLibraryItems(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -377,16 +344,16 @@ export function TeacherChapterSetupPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'ready':
-        return <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Ready</span>;
+        return <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-black uppercase tracking-wider">Ready</span>;
       case 'queued':
       case 'processing':
-        return <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse whitespace-nowrap shrink-0">Generating...</span>;
+        return <span className="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse">Generating...</span>;
       case 'placeholder':
-        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Not set up</span>;
+        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider">Not set up yet</span>;
       case 'failed':
-        return <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">Unavailable</span>;
+        return <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-[10px] font-black uppercase tracking-wider">Unavailable</span>;
       default:
-        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap shrink-0">{status}</span>;
+        return <span className="px-2.5 py-1 bg-gray-100 text-gray-700 border border-gray-300 rounded-full text-[10px] font-black uppercase tracking-wider">{status}</span>;
     }
   };
 
@@ -492,27 +459,12 @@ export function TeacherChapterSetupPage() {
     setAssignError(null);
     try {
       const activeActs = activities.filter(a => a.active);
-      const selectedInteractive = INTERACTIVE_ASSIGNMENT_TYPES.filter(a => interactiveAssignments[a.type]);
-      const totalSelected = activeActs.length + selectedInteractive.length;
+      const totalSelected = activeActs.length;
       if (totalSelected === 0) {
-        throw new Error('Please select at least one activity or interactive mode to assign.');
+        throw new Error('Please select at least one activity to assign.');
       }
-
-      const quizMode = selectedInteractive.find(m => m.type === 'interactive_quiz');
-      const otherInteractive = selectedInteractive.filter(m => m.type !== 'interactive_quiz');
+      
       const promises: Promise<any>[] = [];
-
-      // Create quiz assignment first (needs preview + approval before students see it)
-      let quizAssignmentId: string | null = null;
-      if (quizMode) {
-        const quizResp = await api.post(`/teachers/classes/${classId}/assignments`, {
-          chapter_id: chapterId,
-          assignment_type: quizMode.type,
-          title: `${quizMode.label} - ${resolvedChapter?.title || 'Chapter Activity'}`,
-          instructions: specialNote || null,
-        });
-        quizAssignmentId = quizResp.assignment_id;
-      }
 
       // Create assignments for chapter activities
       activeActs.forEach(act => {
@@ -527,71 +479,18 @@ export function TeacherChapterSetupPage() {
         );
       });
 
-      // Create assignments for other interactive modes
-      otherInteractive.forEach(mode => {
-        promises.push(
-          api.post(`/teachers/classes/${classId}/assignments`, {
-            chapter_id: chapterId,
-            assignment_type: mode.type,
-            title: `${mode.label} - ${resolvedChapter?.title || 'Chapter Activity'}`,
-            instructions: specialNote || null,
-          })
-        );
-      });
-
       await Promise.all(promises);
 
-      if (quizAssignmentId) {
-        // Close config modal and show quiz preview instead
-        setShowConfig(false);
-        try {
-          const detail = await api.get(`/teachers/classes/${classId}/assignments/${quizAssignmentId}`);
-          setQuizPreviewData(detail);
-        } catch {
-          console.warn("Could not fetch quiz detail, showing preview from creation data");
-        }
-        setPendingQuizId(quizAssignmentId);
-      } else {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate(`/teacher/class/${classId || 'class-8-science'}`);
-        }, 1500);
-      }
+      setSuccess(true);
+      setTimeout(() => {
+        navigate(`/teacher/class/${classId || 'class-8-science'}`);
+      }, 1500);
     } catch (err: any) {
       console.error("Failed to publish assignments:", err);
       setAssignError(err?.detail || err?.message || 'Failed to create assignments. Please try again.');
     } finally {
       setPublishing(false);
     }
-  };
-
-  const [approveSuccess, setApproveSuccess] = useState(false);
-
-  const handleApproveQuiz = async () => {
-    if (!pendingQuizId || !classId) return;
-    setApproving(true);
-    try {
-      await api.patch(`/teachers/classes/${classId}/assignments/${pendingQuizId}/approve`);
-      setPendingQuizId(null);
-      setQuizPreviewData(null);
-      setApproveSuccess(true);
-      setTimeout(() => {
-        navigate(`/teacher/class/${classId || 'class-8-science'}`);
-      }, 1500);
-    } catch (err: any) {
-      console.error("Failed to approve quiz:", err);
-    } finally {
-      setApproving(false);
-    }
-  };
-
-  const handleRejectQuiz = () => {
-    setPendingQuizId(null);
-    setQuizPreviewData(null);
-    setApproveSuccess(true);
-    setTimeout(() => {
-      navigate(`/teacher/class/${classId || 'class-8-science'}`);
-    }, 1500);
   };
 
   return (
@@ -607,8 +506,8 @@ export function TeacherChapterSetupPage() {
 
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30 font-montserrat">
-        <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/teacher/home')}>
-          <span className="text-[#f6f4ee] font-val text-[42px] leading-none tracking-widest mt-1 mr-1 notranslate">M</span>
+        <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/')}>
+          <span className="text-[#f6f4ee] font-val text-[42px] leading-none tracking-widest mt-1 mr-1">M</span>
         </div>
         <nav className="flex flex-col gap-6 w-full items-center my-auto">
           <NavItem icon={<LayoutDashboard size={24} />} onClick={() => navigate('/teacher/home')} />
@@ -617,7 +516,7 @@ export function TeacherChapterSetupPage() {
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
         <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
-          <span className="text-[#1800ad] font-montserrat font-black text-lg">{teacherName.charAt(0)}</span>
+          <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
         </div>
       </aside>
 
@@ -638,21 +537,26 @@ export function TeacherChapterSetupPage() {
 
           <AnimatePresence mode="wait">
             {isLoading ? (
+              /* GORGEOUS SIMULATED GENERATING SCREEN */
               <motion.div 
                 key="generating"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4 w-full"
+                className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4"
               >
                 <div className="relative mb-6">
+                  {/* Absolute outer orbit circle rotating */}
                   <div className="w-16 h-16 rounded-full border-4 border-t-[#1800ad] border-r-transparent border-b-transparent border-l-transparent animate-spin duration-1000"></div>
                 </div>
-                <h2 className="text-xl md:text-2xl font-black text-[#1800ad] tracking-tight transition-all duration-500">
-                  {loadingPhase === 'extracting' ? 'Extracting topics' : 'Generating Topic wise curriculum'}
+                <h2 className="text-xl md:text-2xl font-black text-[#1800ad] tracking-tight">
+                  Generating content for Static Friction & Laws...
                 </h2>
-                <p className="text-xs font-bold text-[#1800ad]/60 uppercase tracking-widest mt-2 animate-pulse font-mono transition-all duration-500">
-                  {loadingPhase === 'extracting' ? 'Analyzing syllabus modules...' : 'Synthesizing concept videos & worksheets...'}
+                <p className="text-xs font-bold text-[#1800ad]/60 uppercase tracking-widest mt-2 animate-pulse font-mono">
+                  Synthesizing concept videos, sandboxes & misconceptions
+                </p>
+                <p className="text-xs font-semibold text-[#1800ad]/70 mt-4 max-w-sm">
+                  Aligning curriculum to NCERT Class 8 Physics standards automatically. Please hold on.
                 </p>
               </motion.div>
             ) : (
@@ -672,7 +576,7 @@ export function TeacherChapterSetupPage() {
                       </span>
                       <span className="text-xs font-bold text-[#1800ad] flex items-center gap-1.5 bg-[#1800ad]/5 px-3 py-1 rounded-full">
                         <Users size={13} />
-                        {resolvedClass?.student_count ?? 0} students enrolled
+                        {resolvedClass?.student_count || 24} students enrolled
                       </span>
                     </div>
                     <h1 className="text-3xl md:text-4xl font-extrabold text-[#1800ad] tracking-tight">
@@ -716,9 +620,9 @@ export function TeacherChapterSetupPage() {
                       >
                         <div>
                           {/* Upper row: icon and status badge */}
-                          <div className="flex items-center justify-between mb-3.5 gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="p-2.5 bg-[#1800ad]/5 rounded-xl border border-[#1800ad]/15 text-[#1800ad] shrink-0">
+                          <div className="flex items-center justify-between mb-3.5">
+                            <div className="flex items-center gap-2.5">
+                              <span className="p-2.5 bg-[#1800ad]/5 rounded-xl border border-[#1800ad]/15 text-[#1800ad]">
                                 {act.asset_type === 'concept_video' && <Film size={18} />}
                                 {act.asset_type === 'simulation' && <Beaker size={18} />}
                                 {act.asset_type === 'three_d_model' && <Layers size={18} />}
@@ -729,8 +633,8 @@ export function TeacherChapterSetupPage() {
                                 {act.asset_type === 'spot_it' && <AlertCircle size={18} />}
                                 {act.asset_type === 'connect_it' && <BookOpen size={18} />}
                               </span>
-                              <h3 className="font-black text-sm tracking-tight text-[#1800ad] break-words">
-                                {isTopicCard ? toSentenceCase(act.title) : act.title}
+                              <h3 className="font-black text-sm tracking-tight text-[#1800ad]">
+                                {act.title}
                               </h3>
                             </div>
 
@@ -738,11 +642,9 @@ export function TeacherChapterSetupPage() {
                           </div>
 
                           {/* Description */}
-                          {act.desc && act.desc.toLowerCase() !== act.title.toLowerCase() && (
-                            <p className="text-xs font-semibold leading-relaxed text-[#1800ad]/80 mb-4">
-                              {act.desc}
-                            </p>
-                          )}
+                          <p className="text-xs font-semibold leading-relaxed text-[#1800ad]/80 mb-4">
+                            {act.desc}
+                          </p>
 
                           {/* Expandable Preview Section */}
                           <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-2xl p-4.5 mb-4 text-xs font-semibold leading-snug">
@@ -799,67 +701,24 @@ export function TeacherChapterSetupPage() {
                                 rows={2}
                                 onClick={(e) => e.stopPropagation()}
                               />
-                              {isDirectGeneratable && act.asset_type !== 'simulation' && act.asset_type !== 'three_d_model' && (
-                                <div className="flex items-center justify-between gap-2 flex-wrap relative" onClick={(e) => e.stopPropagation()}>
+                              {isDirectGeneratable && (
+                                <div className="flex items-center justify-between gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                                   <label className="text-[9px] font-black uppercase tracking-wider text-[#1800ad]/65">
                                     Target Language
                                   </label>
-                                  <div className="relative">
-                                    <button
-                                      type="button"
-                                      onClick={() => setOpenLangDropdownId(openLangDropdownId === act.id ? null : act.id)}
-                                      className="bg-[#f6f4ee] text-[#1800ad] text-[10px] font-bold border border-[#1800ad]/20 px-3 py-1 rounded-full outline-none focus:border-[#1800ad] cursor-pointer flex items-center gap-1.5 min-w-[110px] justify-between transition-all"
-                                    >
-                                      <span>
-                                        {
-                                          {
-                                            english: 'English',
-                                            hindi: 'Hindi (हिंदी)',
-                                            gujarati: 'Gujarati (ગુજરાતી)',
-                                            marathi: 'Marathi (मराठी)',
-                                            telugu: 'Telugu (తెలుగు)',
-                                            tamil: 'Tamil (தமிழ்)',
-                                            bengali: 'Bengali (বাংলা)'
-                                          }[selectedLanguage] || 'English'
-                                        }
-                                      </span>
-                                      <svg className={`w-2 h-2 text-[#1800ad] transition-transform ${openLangDropdownId === act.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M19 9l-7 7-7-7"></path>
-                                      </svg>
-                                    </button>
-                                    {openLangDropdownId === act.id && (
-                                      <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setOpenLangDropdownId(null)} />
-                                        <div className="absolute right-0 mt-1.5 w-[150px] bg-[#fbfaf6] border-2 border-[#1800ad] rounded-2xl shadow-xl z-50 overflow-hidden py-1">
-                                          {[
-                                            { value: 'english', label: 'English' },
-                                            { value: 'hindi', label: 'Hindi (हिंदी)' },
-                                            { value: 'gujarati', label: 'Gujarati (ગુજરાતી)' },
-                                            { value: 'marathi', label: 'Marathi (मराठी)' },
-                                            { value: 'telugu', label: 'Telugu (తెలుగు)' },
-                                            { value: 'tamil', label: 'Tamil (தமிழ்)' },
-                                            { value: 'bengali', label: 'Bengali (বাংলা)' }
-                                          ].map((lang) => (
-                                            <button
-                                              key={lang.value}
-                                              type="button"
-                                              onClick={() => {
-                                                setSelectedLanguage(lang.value);
-                                                setOpenLangDropdownId(null);
-                                              }}
-                                              className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-all ${
-                                                selectedLanguage === lang.value
-                                                  ? 'bg-[#1800ad] text-[#f6f4ee]'
-                                                  : 'text-[#1800ad] hover:bg-[#1800ad]/5'
-                                              }`}
-                                            >
-                                              {lang.label}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
+                                  <select
+                                    value={selectedLanguage}
+                                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                                    className="bg-[#f6f4ee] text-[#1800ad] text-[10px] font-bold border border-[#1800ad]/20 px-2 py-1 rounded-lg outline-none focus:border-[#1800ad] cursor-pointer"
+                                  >
+                                    <option value="english">English</option>
+                                    <option value="hindi">Hindi (हिंदी)</option>
+                                    <option value="gujarati">Gujarati (ગુજરાતી)</option>
+                                    <option value="marathi">Marathi (मराठी)</option>
+                                    <option value="telugu">Telugu (తెలుగు)</option>
+                                    <option value="tamil">Tamil (தமிழ்)</option>
+                                    <option value="bengali">Bengali (বাংলা)</option>
+                                  </select>
                                 </div>
                               )}
                               <div className="flex justify-end gap-2 text-[10px] font-black" onClick={(e) => e.stopPropagation()}>
@@ -944,6 +803,21 @@ export function TeacherChapterSetupPage() {
                   })}
                 </div>
 
+
+
+                {/* Bottom CTA for Configuration Settings trigger */}
+                <div className="mt-8 border-t-2 border-[#1800ad]/15 pt-6 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setSuccess(false);
+                      setAssignError(null);
+                      setShowConfig(true);
+                    }}
+                    className="bg-[#1800ad] text-[#f6f4ee] py-4 px-10 rounded-full font-black text-sm uppercase tracking-widest hover:scale-102 transition-transform shadow-xl"
+                  >
+                    Assign To Class
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -992,13 +866,7 @@ export function TeacherChapterSetupPage() {
                               {a.title}
                             </span>
                           ))}
-                          {INTERACTIVE_ASSIGNMENT_TYPES.filter(m => interactiveAssignments[m.type]).map(m => (
-                            <span key={m.type} className="bg-[#1800ad]/10 whitespace-nowrap px-3 py-1 rounded-full border border-[#1800ad]/30 flex items-center gap-1 font-black">
-                              <Sparkles size={12} className="text-[#1800ad]" />
-                              {m.label}
-                            </span>
-                          ))}
-                          {activities.filter(a => a.active).length === 0 && Object.values(interactiveAssignments).every(v => !v) && (
+                          {activities.filter(a => a.active).length === 0 && (
                             <span className="text-[#1800ad]/50">No activities selected</span>
                           )}
                         </div>
@@ -1084,7 +952,7 @@ export function TeacherChapterSetupPage() {
                   animate={{ scale: 1, y: 0 }}
                   exit={{ scale: 0.95, y: 20 }}
                   onClick={e => e.stopPropagation()}
-                  className="bg-[#fbfaf6] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+                  className="bg-[#f6f4ee] rounded-[32px] border-2 border-[#1800ad] w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
                 >
                   {/* Header */}
                   <div className="flex items-start justify-between p-7 pb-4 border-b border-[#1800ad]/15 shrink-0">
@@ -1239,111 +1107,6 @@ export function TeacherChapterSetupPage() {
                         </div>
                       );
                     })()}
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* ───────────────────────────────────────────────────────────────
-               QUIZ APPROVED SUCCESS TOAST
-          ─────────────────────────────────────────────────────────────── */}
-          {approveSuccess && (
-            <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold text-sm flex items-center gap-2 animate-fade-in">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Quiz approved and assigned to students!
-            </div>
-          )}
-
-          {/* ───────────────────────────────────────────────────────────────
-               QUIZ PREVIEW MODAL (for interactive_quiz pending approval)
-          ─────────────────────────────────────────────────────────────── */}
-          <AnimatePresence>
-            {pendingQuizId && quizPreviewData && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 bg-[#1800ad]/40 z-50 flex items-center justify-center p-4"
-              >
-                <motion.div
-                  initial={{ scale: 0.95 }}
-                  animate={{ scale: 1 }}
-                  exit={{ scale: 0.95 }}
-                  className="bg-[#f6f4ee] rounded-[32px] border-2 border-[#1800ad] w-full max-w-lg p-6 sm:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto"
-                >
-                  <h3 className="text-xl font-black text-[#1800ad] tracking-tight mb-1">
-                    Preview Quiz
-                  </h3>
-                  <p className="text-xs font-semibold opacity-75 mb-5">
-                    Review the generated quiz questions before approving. Students will only see this quiz after you approve.
-                  </p>
-
-                  {quizPreviewData.content_json?.quiz?.length > 0 ? (
-                    <div className="flex flex-col gap-4 mb-6">
-                      {quizPreviewData.content_json.quiz.map((q: any, idx: number) => (
-                        <div key={idx} className="bg-white rounded-2xl border border-[#1800ad]/15 p-4">
-                          <p className="text-xs font-black text-[#1800ad] uppercase tracking-wider mb-2">
-                            Q{idx + 1}
-                          </p>
-                          <p className="text-sm font-bold text-[#1800ad] mb-2">
-                            {q.question}
-                          </p>
-                          <div className="flex flex-col gap-1.5">
-                            {(q.options || []).map((opt: string, oi: number) => (
-                              <div
-                                key={oi}
-                                className={`text-xs font-semibold px-3 py-2 rounded-xl border ${
-                                  q.correctAnswer === oi
-                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                                    : 'bg-gray-50 border-gray-200 text-[#1800ad]/70'
-                                }`}
-                              >
-                                {q.correctAnswer === oi && (
-                                  <span className="text-emerald-600 mr-1.5">&#10003;</span>
-                                )}
-                                {opt}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      <p className="text-[10px] font-semibold text-[#1800ad]/40 text-center">
-                        Correct answers are highlighted in green
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-sm font-semibold text-[#1800ad]/50">
-                      No quiz questions were generated. You may want to delete this assignment and try again.
-                    </div>
-                  )}
-
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={handleRejectQuiz}
-                      disabled={approving}
-                      className="flex-1 py-3 border-2 border-[#1800ad] rounded-full text-xs font-black uppercase tracking-wider text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors"
-                    >
-                      Skip for Now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleApproveQuiz}
-                      disabled={approving || !quizPreviewData.content_json?.quiz?.length}
-                      className="flex-1 py-3 bg-[#1800ad] text-white rounded-full text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#1800ad]/90 transition-colors disabled:opacity-50"
-                    >
-                      {approving ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-t-white border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
-                          Approving...
-                        </>
-                      ) : (
-                        'Approve & Assign'
-                      )}
-                    </button>
                   </div>
                 </motion.div>
               </motion.div>

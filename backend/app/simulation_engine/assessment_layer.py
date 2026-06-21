@@ -142,7 +142,7 @@ Available Parameters:
 
 Generate 4 assessment prompts (one of each type) that encourage active learning:
 
-1. PREDICTION: Ask what will happen when a parameter changes
+1. PREDICTION: Ask what will happen when a parameter changes (must be a multiple-choice question with 4 options and specified correct answer)
 2. INQUIRY: Ask about investigating relationships between variables
 3. EXPERIMENTATION: Ask the student to design a test using the simulation
 4. REFLECTION: Ask to connect simulation observations to real-world phenomena
@@ -152,6 +152,8 @@ Return ONLY valid JSON array:
   {{
     "type": "prediction",
     "question": "question text",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correct_answer": 0,
     "hint": "helpful hint",
     "difficulty": "easy|medium|hard",
     "learning_goal": "what this teaches"
@@ -180,6 +182,8 @@ Return ONLY the JSON array. No markdown."""
                             id=f"ap_{i+1}",
                             type=item.get("type", "inquiry"),
                             question=item.get("question", ""),
+                            options=item.get("options", []),
+                            correct_answer=item.get("correct_answer", 0),
                             hint=item.get("hint", ""),
                             difficulty=item.get("difficulty", "medium"),
                             learning_goal=item.get("learning_goal", ""),
@@ -213,6 +217,8 @@ Return ONLY the JSON array. No markdown."""
                     id=f"ap_{i+1}",
                     type=t["type"],
                     question=question,
+                    options=t.get("options", ["Increases", "Decreases", "Doubles", "Remains unchanged"] if t["type"] == "prediction" else []),
+                    correct_answer=t.get("correct_answer", 0),
                     hint=t["hint"],
                     difficulty=t["difficulty"],
                     learning_goal=t["learning_goal"].replace(
