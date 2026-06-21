@@ -23,15 +23,18 @@ import {
   Sliders,
   AlertCircle,
   Check,
-  Sparkles
+  Sparkles,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
+
 const INTERACTIVE_ASSIGNMENT_TYPES = [
   { type: 'explain_ai', label: 'Explain It', icon: 'HelpCircle', desc: 'Student explains a topic to a curious 10-year-old AI, testing their understanding through teaching.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
   { type: 'predict_ai', label: 'Predict It', icon: 'Sliders', desc: 'Student predicts outcomes of scientific experiments before seeing the result, building hypothesis skills.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-  { type: 'spot_it', label: 'Spot It', icon: 'AlertCircle', desc: 'Student identifies real-world applications of scientific concepts through riddles and scenarios.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-  { type: 'interactive_quiz', label: 'Interactive Quiz', icon: 'HelpCircle', desc: 'Timed interactive quiz that tests knowledge with engaging multiple-choice questions.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
+  { type: 'connect_it', label: 'Connect It', icon: 'AlertCircle', desc: 'Student matches related concepts together, AI-generated and teacher-approved.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { type: 'interactive_quiz', label: 'Recall It', icon: 'HelpCircle', desc: 'Timed interactive quiz that tests knowledge with engaging multiple-choice questions.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
 ];
 
 export const getSketchfabEmbedUrl = (url: string | null | undefined): string => {
@@ -66,11 +69,10 @@ export function TeacherTopicSetupPage() {
   const [resolvedClass, setResolvedClass] = useState<any | null>(null);
   const [teacherName, setTeacherName] = useState<string>('Teacher');
   const [activeAsset, setActiveAsset] = useState<any | null>(() => {
-    // If state is passed via navigate, initialize activeAsset immediately for smoother transitions
     if (state && (state.payload_json !== undefined || state.external_url !== undefined)) {
       return {
         asset_id: topicId,
-        asset_type: '', // Will be updated by API response
+        asset_type: '',
         title: 'Loading...',
         description: 'Loading details...',
         generation_status: 'ready',
@@ -351,18 +353,25 @@ export function TeacherTopicSetupPage() {
     }
   };
 
-  const handleSkipQuiz = () => {
+  const handleSkipQuiz = async () => {
+    if (!pendingQuizId || !classId) return;
+    try {
+      await api.delete(`/teachers/classes/${classId}/assignments/${pendingQuizId}`);
+    } catch (err) {
+      console.error("Failed to delete skipped assignment:", err);
+    }
     setPendingQuizId(null);
     setQuizPreviewData(null);
-    setApproveSuccess(true);
-    setTimeout(() => {
-      navigate(`/teacher/chapter-setup/${classId}/${chapterId}`);
-    }, 1500);
+    navigate(`/teacher/chapter-setup/${classId}/${chapterId}`);
   };
 
   const [regenText, setRegenText] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('english');
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
+
+  // Connect It specific states
+  const [connectItPairs, setConnectItPairs] = useState<any[]>([]);
+  const [isApprovingConnectIt, setIsApprovingConnectIt] = useState(false);
   const [generationEndsAt, setGenerationEndsAt] = useState<Record<string, number>>({});
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -371,6 +380,16 @@ export function TeacherTopicSetupPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // ─── Sync connectItPairs with activeAsset ──────────────────────────────
+  useEffect(() => {
+    if (activeAsset?.asset_type === 'connect_it' && activeAsset?.payload_json?.pairs) {
+      setConnectItPairs(activeAsset.payload_json.pairs);
+    } else if (activeAsset?.asset_type === 'connect_it') {
+      // If the asset exists but has no pairs, initialize empty
+      setConnectItPairs([]);
+    }
+  }, [activeAsset]);
 
   const selectedAsset = activeAsset;
   const activeAssetEndsAt = selectedAsset ? generationEndsAt[selectedAsset.asset_id] : undefined;
@@ -392,6 +411,7 @@ export function TeacherTopicSetupPage() {
     if (activeTopic) {
       setTopicAssets(prev => prev.map(asset => asset.asset_id === nextAsset.asset_id ? nextAsset : asset));
     }
+    // connectItPairs will be updated by the useEffect above
   };
 
   const handleGenerateSelectedAsset = async () => {
@@ -425,6 +445,47 @@ export function TeacherTopicSetupPage() {
       });
     }
   };
+
+  const handleApproveConnectIt = async () => {
+    if (!activeTopic || !selectedAsset || !classId || !chapterId) return;
+    if (connectItPairs.length === 0) {
+      setAssignError('No pairs to approve. Please generate pairs first.');
+      return;
+    }
+    setIsApprovingConnectIt(true);
+    setAssignError(null);
+    try {
+      // Step 1: Patch the asset to mark as approved and save the (possibly edited) pairs
+      await api.patch(`/teachers/classes/${classId}/chapters/${chapterId}/topics/${activeTopic.topic_id}/assets/${selectedAsset.asset_id}`, {
+        payload_json: { ...selectedAsset.payload_json, pairs: connectItPairs },
+        approval_status: 'approved'
+      });
+
+      // Step 2: Create the assignment
+      const assignmentType = mapAssetTypeToAssignmentType(selectedAsset.asset_type);
+      const resp = await api.post(`/teachers/classes/${classId}/assignments`, {
+        chapter_id: chapterId,
+        assignment_type: assignmentType,
+        title: activeTopicTitle,
+        instructions: assignmentNotes,
+      });
+
+      setSuccess(true);
+      setTimeout(() => {
+        navigate(`/teacher/chapter-setup/${classId}/${chapterId}`);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Failed to approve connect it:', err);
+      setAssignError(err?.detail || err?.message || 'Failed to approve and assign.');
+    } finally {
+      setIsApprovingConnectIt(false);
+    }
+  };
+
+  // Determine if the current asset is Connect It and approved
+  const isConnectIt = activeAsset?.asset_type === 'connect_it';
+  const isConnectItApproved = isConnectIt && activeAsset?.payload_json?.approval_status === 'approved';
+  const canAssign = !isConnectIt || (isConnectIt && isConnectItApproved);
 
   return (
     <div className="flex flex-1 w-full bg-[#1800ad] font-montserrat text-[#1800ad] relative">
@@ -515,7 +576,8 @@ export function TeacherTopicSetupPage() {
           ) : (
             <div className="w-full flex-1 flex flex-col gap-6">
 
-              {/* Header / Meta */}              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-5 relative overflow-hidden">
+              {/* Header / Meta */}
+              <div className="bg-[#1800ad]/5 p-6 rounded-[28px] border-2 border-[#1800ad]/15 flex flex-col gap-5 relative overflow-hidden">
                 {isGenerating && activeAsset.asset_type === 'concept_video' && activeAssetEndsAt !== undefined && (
                   <div className="absolute inset-0 bg-[#fbfaf6]/95 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
                     <Loader2 className="w-10 h-10 text-[#1800ad] animate-spin mb-4" />
@@ -565,7 +627,8 @@ export function TeacherTopicSetupPage() {
                       setAssignError(null);
                       setIsSuccessModalOpen(true);
                     }}
-                    className="shrink-0 bg-[#1800ad] text-[#f6f4ee] hover:bg-[#f6f4ee] hover:text-[#1800ad] border-2 border-transparent hover:border-[#1800ad] px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-1.5 h-fit self-end sm:self-start"
+                    disabled={!canAssign}
+                    className={`shrink-0 bg-[#1800ad] text-[#f6f4ee] hover:bg-[#f6f4ee] hover:text-[#1800ad] border-2 border-transparent hover:border-[#1800ad] px-6 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-1.5 h-fit self-end sm:self-start ${!canAssign ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <CheckCircle2 size={13} className="stroke-[3]" /> Assign to Class
                   </button>
@@ -725,8 +788,8 @@ export function TeacherTopicSetupPage() {
                       </div>
                     )}
 
-                    {/* Detailed renderer for explain_it, predict_it, spot_it, connect_it */}
-                    {['explain_it', 'predict_it', 'spot_it', 'connect_it'].includes(activeAsset.asset_type) && (
+                    {/* Detailed renderer for explain_it, predict_it */}
+                    {['explain_it', 'predict_it'].includes(activeAsset.asset_type) && (
                       <div className="text-xs text-[#1800ad]/85 font-semibold leading-relaxed flex flex-col gap-3">
                         {activeAsset.payload_json.instructions ? (
                           <div className="bg-[#1800ad]/5 p-4 rounded-xl border border-[#1800ad]/10">
@@ -734,6 +797,82 @@ export function TeacherTopicSetupPage() {
                             <p className="text-xs sm:text-sm text-[#1800ad] whitespace-pre-wrap">{activeAsset.payload_json.instructions}</p>
                           </div>
                         ) : null}
+                      </div>
+                    )}
+
+                    {/* Detailed renderer for connect_it */}
+                    {activeAsset.asset_type === 'connect_it' && (
+                      <div className="flex flex-col gap-4 mt-6">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-black uppercase tracking-widest text-[#1800ad]">Review Matching Pairs</h4>
+                          <div className="text-xs font-bold text-[#1800ad]/60 uppercase tracking-widest">
+                            {activeAsset.payload_json.approval_status === 'approved' ? '✅ Approved' : '⏳ Pending Review'}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          {connectItPairs.length > 0 ? connectItPairs.map((pair: any, idx: number) => (
+                            <div key={pair.id || idx} className="flex items-center gap-3 bg-white border border-[#1800ad]/10 p-3 rounded-2xl">
+                              <input
+                                type="text"
+                                value={pair.left}
+                                onChange={(e) => {
+                                  const newPairs = [...connectItPairs];
+                                  newPairs[idx] = { ...newPairs[idx], left: e.target.value };
+                                  setConnectItPairs(newPairs);
+                                }}
+                                className="flex-1 bg-[#1800ad]/5 border-none rounded-xl px-4 py-2 text-sm font-semibold text-[#1800ad] focus:outline-none focus:ring-2 focus:ring-[#1800ad]/20"
+                                placeholder="Left item"
+                              />
+                              <div className="shrink-0 text-[#1800ad]/40">↔</div>
+                              <input
+                                type="text"
+                                value={pair.right}
+                                onChange={(e) => {
+                                  const newPairs = [...connectItPairs];
+                                  newPairs[idx] = { ...newPairs[idx], right: e.target.value };
+                                  setConnectItPairs(newPairs);
+                                }}
+                                className="flex-1 bg-[#1800ad]/5 border-none rounded-xl px-4 py-2 text-sm font-semibold text-[#1800ad] focus:outline-none focus:ring-2 focus:ring-[#1800ad]/20"
+                                placeholder="Right item"
+                              />
+                              <button
+                                onClick={() => {
+                                  const newPairs = [...connectItPairs];
+                                  newPairs.splice(idx, 1);
+                                  setConnectItPairs(newPairs);
+                                }}
+                                className="shrink-0 w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 hover:bg-rose-200 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )) : (
+                            <p className="text-sm text-[#1800ad]/50 italic">No pairs generated yet. Click "Generate" to create matching pairs.</p>
+                          )}
+                        </div>
+                        <div className="flex justify-end gap-3 mt-4">
+                          <button
+                            onClick={handleGenerateSelectedAsset}
+                            disabled={isGenerating}
+                            className="px-6 py-3 rounded-full bg-[#1800ad]/5 text-[#1800ad] text-xs font-black uppercase tracking-widest hover:bg-[#1800ad]/10 transition-colors flex items-center gap-2"
+                          >
+                            <RefreshCw size={14} /> {isGenerating ? 'Regenerating...' : 'Regenerate All'}
+                          </button>
+                          <button
+                            onClick={handleApproveConnectIt}
+                            disabled={isApprovingConnectIt || isGenerating || connectItPairs.length === 0}
+                            className={`px-6 py-3 rounded-full bg-[#1800ad] text-white text-xs font-black uppercase tracking-widest shadow-md hover:shadow-lg transition-all flex items-center gap-2 ${(connectItPairs.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {isApprovingConnectIt ? (
+                              <><Loader2 size={14} className="animate-spin" /> Saving...</>
+                            ) : (
+                              <><Check size={14} /> Approve & Assign</>
+                            )}
+                          </button>
+                          {connectItPairs.length === 0 && (
+                            <span className="text-[10px] text-rose-500 font-semibold">Generate pairs first</span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

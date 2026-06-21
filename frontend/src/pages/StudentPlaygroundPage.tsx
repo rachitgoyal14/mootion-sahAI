@@ -3358,7 +3358,7 @@ export function StudentPlaygroundPage() {
               <span className="text-[11px] font-black uppercase text-[#1800ad] font-montserrat tracking-wider">Storyboard</span>
             </button>
  
-            {/* Cell 2: Interactive Quiz */}
+            {/* Cell 2: Recall It */}
             <button
               onClick={() => {
                 setTextInput('/quiz');
@@ -3369,7 +3369,7 @@ export function StudentPlaygroundPage() {
               <div className="w-12 h-12 rounded-full bg-[#1800ad]/5 border border-[#1800ad]/20 flex items-center justify-center text-[#1800ad] group-hover:bg-[#1800ad]/10 transition-all mb-3 shadow-sm">
                 <HelpCircle size={22} className="stroke-[1.5]" />
               </div>
-              <span className="text-[11px] font-black uppercase text-[#1800ad] font-montserrat tracking-wider">Interactive Quiz</span>
+              <span className="text-[11px] font-black uppercase text-[#1800ad] font-montserrat tracking-wider">Recall It</span>
             </button>
  
             {/* Cell 3: Playground */}

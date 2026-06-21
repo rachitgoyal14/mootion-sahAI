@@ -697,6 +697,7 @@ def submit_quiz_attempt(
 
 
 def get_class_analytics_overview(db: Session, teacher: User, class_id: str) -> ClassAnalyticsOverview:
+    from app.core.models import ConceptScore
     # Verify access
     membership = db.query(TeacherClassMembership).filter(
         TeacherClassMembership.teacher_id == teacher.id,
@@ -757,23 +758,35 @@ def get_class_analytics_overview(db: Session, teacher: User, class_id: str) -> C
             "date": att.created_at.strftime("%I:%M %p, %b %d")
         })
 
-    # Common misconceptions (extracting from AI feedbacks using simple heuristic or default)
-    misconceptions = []
-    attempts = db.query(StudentAttempt).filter(StudentAttempt.assignment_id.in_(assignment_ids)).all()
-    for att in attempts:
-        if att.ai_feedback and ("misconception" in att.ai_feedback.lower() or "incorrectly" in att.ai_feedback.lower()):
-            # Extract a sentence around misconception
-            sentences = re.split(r'[.!?]', att.ai_feedback)
-            for s in sentences:
-                if "misconception" in s.lower() or "believe" in s.lower() or "think" in s.lower():
-                    misconceptions.append(s.strip())
+    # Most recent misconception from Gemini-evaluated ConceptScore gaps
+    # Use the most recent ConceptScore row that has gaps populated for this class
+    recent_concept_score_with_gaps = (
+        db.query(ConceptScore)
+        .filter(
+            ConceptScore.class_id == class_id,
+            ConceptScore.gaps.isnot(None),
+        )
+        .order_by(ConceptScore.created_at.desc())
+        .first()
+    )
 
-    if not attempts:
-        most_common = "No submissions yet."
-    else:
-        most_common = "No struggle areas detected yet."
-        if misconceptions:
-            most_common = max(set(misconceptions), key=misconceptions.count)
+    most_common = "No struggle areas detected yet."
+    misconception_count = 0
+    if recent_concept_score_with_gaps and recent_concept_score_with_gaps.gaps:
+        raw_gaps = recent_concept_score_with_gaps.gaps
+        # gaps may be stored as a JSON array (list) or a JSON-encoded string
+        if isinstance(raw_gaps, list):
+            gap_list = [g for g in raw_gaps if g]
+        else:
+            try:
+                import json as _json
+                gap_list = _json.loads(raw_gaps) if isinstance(raw_gaps, str) else []
+            except Exception:
+                gap_list = [str(raw_gaps)]
+        misconception_count = len(gap_list)
+        if gap_list:
+            # Use the first gap from the most recent attempt — most specific, most recent
+            most_common = gap_list[0][:150]
 
     return ClassAnalyticsOverview(
         average_scores={
@@ -782,8 +795,8 @@ def get_class_analytics_overview(db: Session, teacher: User, class_id: str) -> C
             "expression": round(e_avg, 2),
         },
         task_completion_rate=round(completion_rate, 1),
-        most_common_misconception=most_common[:100],
-        misconception_count=len(misconceptions) or 2,
+        most_common_misconception=most_common,
+        misconception_count=misconception_count,
         recent_activities=activities,
     )
 

@@ -7,208 +7,29 @@ import {
   X,
   Beaker,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Play,
+  Pause,
+  RotateCcw,
+  RotateCw,
+  Volume2,
+  VolumeX,
+  LayoutDashboard,
+  CheckSquare,
+  Compass,
+  Gamepad2,
+  BarChart2
 } from 'lucide-react';
+import ConnectItActivity from '../components/ConnectItActivity';
 import { TASKS, Task } from '../data/tasks';
 import { NavItem } from '../components/NavItem';
 import { api } from '../lib/api';
 import { ChatbotFab } from '../components/ChatbotFab';
-import { LayoutDashboard, CheckSquare, Compass, Gamepad2, BarChart2, Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX } from 'lucide-react';
 
 // Import modular Teach AI activities and progress panels
 import { LiveVoiceActivity, AttemptHistoryPanel } from '../components/LiveVoiceActivity';
 
-// --- Content Components ---
-
-function QuizContent({ task }: { task: Task }) {
-  const [questions, setQuestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(10);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitResult, setSubmitResult] = useState<any>(null);
-  const submitAttemptedRef = useRef(false);
-
-  useEffect(() => {
-    if (!isSubmitted || submitting || submitAttemptedRef.current) return;
-    const dbTask = (task as any).dbTask;
-    if (!dbTask) return;
-    submitAttemptedRef.current = true;
-    let score = 0;
-    questions.forEach(q => { if (answers[q.id] === q.options[q.correctAnswer]) score++; });
-    setSubmitting(true);
-    api.post(`/students/classes/${dbTask.class_id}/assignments/${dbTask.assignment_id}/submit-quiz`, {
-      score,
-      total_questions: questions.length
-    }).then(res => {
-      setSubmitResult(res);
-    }).catch(err => {
-      console.error("Failed to submit quiz score:", err);
-    }).finally(() => {
-      setSubmitting(false);
-    });
-  }, [isSubmitted, questions, answers, task]);
-
-  useEffect(() => {
-    // If it's a real backend task and we have quiz questions, use them!
-    if ((task as any).dbTask) {
-      const mainJob = (task as any).dbTask.jobs?.find((j: any) => j.asset_type === 'quiz' || j.asset_type === 'interactive_quiz');
-      const questionsData = mainJob?.result_json?.questions || mainJob?.result_json?.quiz || (task as any).dbTask.content_json?.quiz;
-      if (questionsData && Array.isArray(questionsData)) {
-        const normalized = questionsData.map((q: any, i: number) => ({
-          id: q.id ?? `q_${i}`,
-          questionText: q.questionText ?? q.question ?? '',
-          options: q.options ?? [],
-          correctAnswer: q.correctAnswer,
-        }));
-        setQuestions(normalized);
-        setLoading(false);
-        return;
-      }
-    }
-
-    // Fallback to generating simulated quiz
-    fetch('/api/quiz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject: task.subject, topic: task.topic })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.questions) setQuestions(data.questions);
-      setLoading(false);
-    })
-    .catch(() => setLoading(false));
-  }, [task]);
-
-  useEffect(() => {
-    if (loading || isSubmitted || questions.length === 0) return;
-    
-    if (timeLeft <= 0) {
-      if (currentIdx === questions.length - 1) {
-        setIsSubmitted(true);
-      } else {
-        setCurrentIdx(prev => prev + 1);
-        setTimeLeft(10);
-      }
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeLeft(prev => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [timeLeft, loading, isSubmitted, questions.length, currentIdx]);
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full min-h-[400px]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
-          <p className="text-[#1800ad] font-bold text-lg animate-pulse">Generating quiz...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (questions.length === 0) {
-    return <div className="p-8 font-bold">Failed to load quiz.</div>;
-  }
-
-  const q = questions[currentIdx];
-  const progress = ((currentIdx) / questions.length) * 100;
-
-  if (isSubmitted) {
-    let score = 0;
-    questions.forEach(question => {
-      if (answers[question.id] === question.options[question.correctAnswer]) score++;
-    });
-    const dbTask = (task as any).dbTask;
-
-    return (
-       <div className="flex flex-col items-center flex-1 mt-6 max-w-3xl mx-auto w-full">
-         <div className="bg-white p-10 rounded-[40px] flex flex-col items-center max-w-lg w-full border-2 border-[#1800ad]/10 shadow-xl">
-            <h2 className="text-3xl font-black text-[#1800ad] mb-6">Quiz Complete!</h2>
-            <div className="w-32 h-32 rounded-full border-8 border-[#1800ad] flex items-center justify-center mb-6">
-              <span className="text-4xl font-black text-[#1800ad]">{Math.round((score / questions.length) * 100)}%</span>
-            </div>
-            <p className="font-bold text-[#1800ad]/70 mb-8">You answered {score} out of {questions.length} correctly.</p>
-            
-            {dbTask && submitting && (
-              <p className="text-sm text-[#1800ad]/50 mb-4 animate-pulse">Submitting score...</p>
-            )}
-            {dbTask && submitResult && (
-              <p className="text-sm text-green-600 font-semibold mb-4">✓ Score saved to your analytics</p>
-            )}
-            {dbTask && !submitting && !submitResult && (
-              <p className="text-sm text-amber-600 font-semibold mb-4">⚠ Score could not be saved</p>
-            )}
-            
-            <div className="flex gap-4 w-full">
-              <button onClick={() => { setIsSubmitted(false); setSubmitResult(null); submitAttemptedRef.current = false; setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
-                Try Again
-              </button>
-            </div>
-         </div>
-       </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full mt-6">
-       <div className="w-full bg-[#1800ad]/10 h-2 rounded-full mb-8 overflow-hidden">
-         <div className="h-full bg-[#1800ad] transition-all duration-300" style={{ width: `${progress}%` }}></div>
-       </div>
-
-       <div className="bg-white rounded-[40px] p-8 md:p-12 border-2 border-[#1800ad]/10 shadow-lg mb-6 relative min-h-[480px]">
-          <div className="absolute top-8 right-8 flex items-center justify-center w-12 h-12 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold text-xl">
-            {timeLeft}
-          </div>
-          <span className="font-bold text-[#1800ad]/50 text-sm mb-4 block uppercase tracking-wider">Question {currentIdx + 1} of {questions.length}</span>
-          <h3 className="text-2xl font-black text-[#1800ad] mb-8 pr-16">{q.questionText}</h3>
-
-          <div className="flex flex-col gap-4">
-             {q.options?.map((opt: string) => (
-                <button
-                  key={opt} 
-                  onClick={() => setAnswers({...answers, [q.id]: opt})}
-                  className={`text-left flex items-center gap-4 p-5 rounded-2xl border-2 transition-all w-full ${answers[q.id] === opt ? 'border-[#1800ad] bg-[#1800ad]/5 shadow-[0_0_0_2px_rgba(24,0,173,0.1)]' : 'border-[#1800ad]/10 hover:border-[#1800ad]/30 hover:bg-[#f6f4ee]'}`}
-                >
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${answers[q.id] === opt ? 'border-[#1800ad]' : 'border-[#1800ad]/30'}`}>
-                    {answers[q.id] === opt && <div className="w-3 h-3 bg-[#1800ad] rounded-full" />}
-                  </div>
-                  <span className={`font-bold text-lg ${answers[q.id] === opt ? 'text-[#1800ad]' : 'text-[#1800ad]/80'}`}>{opt}</span>
-                </button>
-             ))}
-          </div>
-       </div>
-
-       <div className="flex justify-end items-center mt-auto pb-8">
-          {currentIdx === questions.length - 1 ? (
-             <button 
-                onClick={() => setIsSubmitted(true)}
-                disabled={!answers[q.id]}
-                className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-             >
-                Submit Answers
-              </button>
-          ) : (
-             <button 
-                onClick={() => { setCurrentIdx(prev => prev + 1); setTimeLeft(10); }}
-                disabled={!answers[q.id]}
-                className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0"
-             >
-                Next <ChevronRight size={20} />
-             </button>
-          )}
-       </div>
-    </div>
-  );
-}
-
+// --- Custom Video Player ---
 function CustomVideoPlayer({ src, poster, isFullscreen, setIsFullscreen }: { src: string, poster?: string, isFullscreen: boolean, setIsFullscreen: (val: boolean) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -397,14 +218,202 @@ function CustomVideoPlayer({ src, poster, isFullscreen, setIsFullscreen }: { src
   );
 }
 
+// --- Quiz Content Component ---
+function QuizContent({ task }: { task: Task }) {
+  const [questions, setQuestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(10);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<any>(null);
+  const submitAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isSubmitted || submitting || submitAttemptedRef.current) return;
+    const dbTask = (task as any).dbTask;
+    if (!dbTask) return;
+    submitAttemptedRef.current = true;
+    let score = 0;
+    questions.forEach(q => { if (answers[q.id] === q.options[q.correctAnswer]) score++; });
+    setSubmitting(true);
+    api.post(`/students/classes/${dbTask.class_id}/assignments/${dbTask.assignment_id}/submit-quiz`, {
+      score,
+      total_questions: questions.length
+    }).then(res => {
+      setSubmitResult(res);
+    }).catch(err => {
+      console.error("Failed to submit quiz score:", err);
+    }).finally(() => {
+      setSubmitting(false);
+    });
+  }, [isSubmitted, questions, answers, task]);
+
+  useEffect(() => {
+    if ((task as any).dbTask) {
+      const mainJob = (task as any).dbTask.jobs?.find((j: any) => j.asset_type === 'quiz' || j.asset_type === 'interactive_quiz');
+      const questionsData = mainJob?.result_json?.questions || mainJob?.result_json?.quiz || (task as any).dbTask.content_json?.quiz;
+      if (questionsData && Array.isArray(questionsData)) {
+        const normalized = questionsData.map((q: any, i: number) => ({
+          id: q.id ?? `q_${i}`,
+          questionText: q.questionText ?? q.question ?? '',
+          options: q.options ?? [],
+          correctAnswer: q.correctAnswer,
+        }));
+        setQuestions(normalized);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Fallback to generating simulated quiz
+    fetch('/api/quiz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject: task.subject, topic: task.topic })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.questions) setQuestions(data.questions);
+      setLoading(false);
+    })
+    .catch(() => setLoading(false));
+  }, [task]);
+
+  useEffect(() => {
+    if (loading || isSubmitted || questions.length === 0) return;
+    
+    if (timeLeft <= 0) {
+      if (currentIdx === questions.length - 1) {
+        setIsSubmitted(true);
+      } else {
+        setCurrentIdx(prev => prev + 1);
+        setTimeLeft(10);
+      }
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeLeft, loading, isSubmitted, questions.length, currentIdx]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center h-full min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
+          <p className="text-[#1800ad] font-bold text-lg animate-pulse">Generating quiz...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return <div className="p-8 font-bold">Failed to load quiz.</div>;
+  }
+
+  const q = questions[currentIdx];
+  const progress = ((currentIdx) / questions.length) * 100;
+
+  if (isSubmitted) {
+    let score = 0;
+    questions.forEach(question => {
+      if (answers[question.id] === question.options[question.correctAnswer]) score++;
+    });
+    const dbTask = (task as any).dbTask;
+
+    return (
+       <div className="flex flex-col items-center flex-1 mt-6 max-w-3xl mx-auto w-full">
+         <div className="bg-white p-10 rounded-[40px] flex flex-col items-center max-w-lg w-full border-2 border-[#1800ad]/10 shadow-xl">
+            <h2 className="text-3xl font-black text-[#1800ad] mb-6">Quiz Complete!</h2>
+            <div className="w-32 h-32 rounded-full border-8 border-[#1800ad] flex items-center justify-center mb-6">
+              <span className="text-4xl font-black text-[#1800ad]">{Math.round((score / questions.length) * 100)}%</span>
+            </div>
+            <p className="font-bold text-[#1800ad]/70 mb-8">You answered {score} out of {questions.length} correctly.</p>
+            
+            {dbTask && submitting && (
+              <p className="text-sm text-[#1800ad]/50 mb-4 animate-pulse">Submitting score...</p>
+            )}
+            {dbTask && submitResult && (
+              <p className="text-sm text-green-600 font-semibold mb-4">✓ Score saved to your analytics</p>
+            )}
+            {dbTask && !submitting && !submitResult && (
+              <p className="text-sm text-amber-600 font-semibold mb-4">⚠ Score could not be saved</p>
+            )}
+            
+            <div className="flex gap-4 w-full">
+              <button onClick={() => { setIsSubmitted(false); setSubmitResult(null); submitAttemptedRef.current = false; setAnswers({}); setCurrentIdx(0); setTimeLeft(10); }} className="flex-1 py-4 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold hover:bg-[#1800ad]/20 transition-colors">
+                Try Again
+              </button>
+            </div>
+         </div>
+       </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full mt-6">
+       <div className="w-full bg-[#1800ad]/10 h-2 rounded-full mb-8 overflow-hidden">
+         <div className="h-full bg-[#1800ad] transition-all duration-300" style={{ width: `${progress}%` }}></div>
+       </div>
+
+       <div className="bg-white rounded-[40px] p-8 md:p-12 border-2 border-[#1800ad]/10 shadow-lg mb-6 relative min-h-[480px]">
+          <div className="absolute top-8 right-8 flex items-center justify-center w-12 h-12 bg-[#1800ad]/10 text-[#1800ad] rounded-full font-bold text-xl">
+            {timeLeft}
+          </div>
+          <span className="font-bold text-[#1800ad]/50 text-sm mb-4 block uppercase tracking-wider">Question {currentIdx + 1} of {questions.length}</span>
+          <h3 className="text-2xl font-black text-[#1800ad] mb-8 pr-16">{q.questionText}</h3>
+
+          <div className="flex flex-col gap-4">
+             {q.options?.map((opt: string) => (
+                <button
+                  key={opt} 
+                  onClick={() => setAnswers({...answers, [q.id]: opt})}
+                  className={`text-left flex items-center gap-4 p-5 rounded-2xl border-2 transition-all w-full ${answers[q.id] === opt ? 'border-[#1800ad] bg-[#1800ad]/5 shadow-[0_0_0_2px_rgba(24,0,173,0.1)]' : 'border-[#1800ad]/10 hover:border-[#1800ad]/30 hover:bg-[#f6f4ee]'}`}
+                >
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${answers[q.id] === opt ? 'border-[#1800ad]' : 'border-[#1800ad]/30'}`}>
+                    {answers[q.id] === opt && <div className="w-3 h-3 bg-[#1800ad] rounded-full" />}
+                  </div>
+                  <span className={`font-bold text-lg ${answers[q.id] === opt ? 'text-[#1800ad]' : 'text-[#1800ad]/80'}`}>{opt}</span>
+                </button>
+             ))}
+          </div>
+       </div>
+
+       <div className="flex justify-end items-center mt-auto pb-8">
+          {currentIdx === questions.length - 1 ? (
+             <button 
+                onClick={() => setIsSubmitted(true)}
+                disabled={!answers[q.id]}
+                className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+             >
+                Submit Answers
+              </button>
+          ) : (
+             <button 
+                onClick={() => { setCurrentIdx(prev => prev + 1); setTimeLeft(10); }}
+                disabled={!answers[q.id]}
+                className="px-8 py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all flex items-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0"
+             >
+                Next <ChevronRight size={20} />
+             </button>
+          )}
+       </div>
+    </div>
+  );
+}
+
+// --- Video/Simulation Content Component ---
 function VideoSimulationContent({ task }: { task: Task }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // ─── FIX: Prioritise content_json.external_url / embedUrl ──────────────
   const dbTask = (task as any).dbTask;
   const contentJson = dbTask?.content_json || {};
 
-  // If content_json provides a direct URL, use that
   let mediaUrl: string | null = null;
   if (contentJson.external_url) {
     mediaUrl = contentJson.external_url;
@@ -412,7 +421,6 @@ function VideoSimulationContent({ task }: { task: Task }) {
     mediaUrl = contentJson.embedUrl;
   }
 
-  // Fallback: old asset‑ID construction
   if (!mediaUrl) {
     const mainJob = dbTask?.jobs?.[0];
     const assetId = mainJob?.asset_id || task.id;
@@ -426,12 +434,10 @@ function VideoSimulationContent({ task }: { task: Task }) {
     mediaUrl = `${getBackendBaseUrl()}/media/assets/${assetId}`;
   }
 
-  // For mock tasks (no dbTask) we use a sample video
   const fallbackVideo = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
   const finalUrl = dbTask ? mediaUrl : fallbackVideo;
 
   const renderContent = (fullscreenMode = false) => {
-    // Simulation / 3D Model rendering
     if (task.type === 'Simulation' || task.typeLabel === '3D Model') {
       return (
         <div className={`w-full bg-white flex items-center justify-center relative flex-col shrink-0 ${
@@ -497,7 +503,6 @@ function VideoSimulationContent({ task }: { task: Task }) {
   if (isFullscreen) {
     return (
       <div className="fixed inset-0 w-screen h-screen bg-[#f6f4ee] z-[99999] flex flex-col overflow-hidden font-montserrat">
-        {/* Fullscreen Header */}
         <div className="w-full h-14 bg-[#1800ad] flex items-center justify-between px-6 shrink-0 shadow-md">
           <div className="flex flex-col">
             <span className="text-white/60 font-bold text-[10px] uppercase tracking-wider">{task.subject} • {task.typeLabel || 'Simulation'}</span>
@@ -511,7 +516,6 @@ function VideoSimulationContent({ task }: { task: Task }) {
             <span>Exit Fullscreen</span>
           </button>
         </div>
-        {/* Fullscreen Content Area */}
         <div className="flex-1 w-full bg-white relative">
           {renderContent(true)}
         </div>
@@ -523,7 +527,6 @@ function VideoSimulationContent({ task }: { task: Task }) {
 }
 
 // --- Main Page ---
-
 export function StudentTaskActivityPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
@@ -531,7 +534,6 @@ export function StudentTaskActivityPage() {
   const fromHome = searchParams.get('fromHome') === 'true';
   const classId = searchParams.get('class_id');
   
-  // Determine if we accessed from Explore or Tasks
   const isFromExplore = !fromHome && !!(taskId && taskId.startsWith('exp_'));
   let backUrl = fromHome ? '/student/home' : '/student/tasks';
   if (isFromExplore) {
@@ -575,7 +577,6 @@ export function StudentTaskActivityPage() {
   }, [classId]);
 
   useEffect(() => {
-    // If it's a static task ID (like p1, c1, m1) or exp_, we don't fetch
     if (!taskId || taskId.startsWith('exp_') || ['p1', 'p2', 'c1', 'c2', 'c3', 'm1', 'm2', 'm3', 'b1', 'b2', 'b3'].includes(taskId)) {
       return;
     }
@@ -601,7 +602,6 @@ export function StudentTaskActivityPage() {
     fetchAssignment();
   }, [taskId, classId]);
   
-  // Resolve task or dynamic task from explore chapters or backend
   let task: any = null;
 
   if (dbTask) {
@@ -629,8 +629,8 @@ export function StudentTaskActivityPage() {
       taskType = 'Connect It';
       typeLabel = 'Connect It';
     } else if (['interactive_quiz', 'INTERACTIVE_QUIZ'].includes(dbTask.assignment_type)) {
-      taskType = 'Interactive Quiz';
-      typeLabel = 'Interactive Quiz';
+      taskType = 'Recall It';
+      typeLabel = 'Recall It';
     }
 
     task = {
@@ -646,7 +646,7 @@ export function StudentTaskActivityPage() {
   } else if (!taskId?.startsWith('exp_')) {
     task = TASKS.find(t => t.id === taskId);
   } else {
-    const parts = taskId.split('_'); // exp, phy, c3, t1, Video/Simulation/Quiz
+    const parts = taskId.split('_');
     const subjectCode = parts[1];
     const chapterId = parts[2];
     const topicId = parts[3];
@@ -683,8 +683,8 @@ export function StudentTaskActivityPage() {
   const [activeActivity, setActiveActivity] = useState<string | null>(null);
 
   useEffect(() => {
-    if (task && ['Explain It', 'Predict It', 'Spot It', 'Connect It', 'Interactive Quiz'].includes(task.type)) {
-      if (task.type === 'Interactive Quiz') {
+    if (task && ['Explain It', 'Predict It', 'Spot It', 'Connect It', 'Recall It'].includes(task.type)) {
+      if (task.type === 'Recall It') {
         setActiveActivity(null);
       } else {
         setActiveActivity(task.type);
@@ -724,7 +724,6 @@ export function StudentTaskActivityPage() {
       
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-[80px] lg:w-[100px] flex-col items-center justify-between py-8 fixed top-0 bottom-0 left-0 h-full shrink-0 bg-[#1800ad] text-[#f6f4ee] z-30">
-        {/* Logo */}
         <div className="flex items-center justify-center shrink-0 mt-4 cursor-pointer" onClick={() => navigate('/student/home')}>
           <span className="text-[#f6f4ee] font-val text-[42px] leading-none tracking-widest mt-1 mr-1 notranslate">M</span>
         </div>
@@ -754,7 +753,6 @@ export function StudentTaskActivityPage() {
         )}
 
         <div className="flex flex-1 overflow-hidden min-h-0 gap-8">
-          {/* Main Content Area */}
           <div className={`flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar pb-20 md:pb-0 ${activeActivity ? 'max-w-none' : ''}`}>
              <AnimatePresence mode="wait">
                {activeActivity === 'Explain It' && (
@@ -774,17 +772,21 @@ export function StudentTaskActivityPage() {
                )}
                {activeActivity === 'Connect It' && (
                  <motion.div key="ConnectIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <LiveVoiceActivity task={task} activityName="Connect It" instructions="Explain the relationship between concepts." onDone={() => setActiveActivity(null)} />
+                   <ConnectItActivity task={task} onDone={() => setActiveActivity(null)} />
                  </motion.div>
                )}
               {!activeActivity && (
                   <motion.div key="default" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="h-full flex flex-col">
-                      {(task.type === 'Quiz' || task.type === 'Interactive Quiz') ? <QuizContent task={task} /> : <VideoSimulationContent task={task} />}
+                      {task.type === 'Connect It' ? (
+                        <ConnectItActivity task={task} onDone={() => {}} />
+                      ) : (task.type === 'Quiz' || task.type === 'Recall It') ? (
+                        <QuizContent task={task} />
+                      ) : (
+                        <VideoSimulationContent task={task} />
+                      )}
                      
-                     {/* Multi-attempt logs & interactive teacher auditing board embedded cleanly right in the container flow */}
                      <AttemptHistoryPanel taskId={task.id} />
 
-                     {/* Mobile Activity Grid */}
                      <div className="lg:hidden w-full mt-6 pb-12">
                         <div className="bg-[#1800ad] rounded-[22px] p-4 shadow-lg relative overflow-hidden">
                           <h3 className="font-bold text-md text-white mb-2 pb-1 border-b border-white/10 tracking-wide">Activity</h3>
@@ -809,7 +811,6 @@ export function StudentTaskActivityPage() {
              </AnimatePresence>
           </div>
 
-          {/* Activity Sidebar */}
           {!activeActivity && (
             <div className="hidden lg:flex w-80 shrink-0 flex-col bg-[#1800ad] px-6 pt-5 pb-5 rounded-[28px] overflow-y-auto custom-scrollbar relative shadow-xl h-fit">
               <div className="flex justify-between items-center mb-4">

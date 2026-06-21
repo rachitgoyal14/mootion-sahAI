@@ -80,6 +80,11 @@ const formatDuration = (seconds: number) => {
   return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
 };
 
+const toSentenceCase = (str: string) => {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 const ASSET_TYPES_ORDER = [
   'concept_video',
   'simulation',
@@ -89,13 +94,6 @@ const ASSET_TYPES_ORDER = [
   'predict_it',
   'spot_it',
   'connect_it'
-];
-
-const INTERACTIVE_ASSIGNMENT_TYPES = [
-  { type: 'explain_ai', label: 'Explain It', icon: 'HelpCircle', desc: 'Student explains a topic to a curious 10-year-old AI, testing their understanding through teaching.', color: 'bg-purple-100 text-purple-800 border-purple-300' },
-  { type: 'predict_ai', label: 'Predict It', icon: 'Sliders', desc: 'Student predicts outcomes of scientific experiments before seeing the result, building hypothesis skills.', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-  { type: 'spot_it', label: 'Spot It', icon: 'AlertCircle', desc: 'Student identifies real-world applications of scientific concepts through riddles and scenarios.', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-  { type: 'interactive_quiz', label: 'Interactive Quiz', icon: 'HelpCircle', desc: 'Timed interactive quiz that tests knowledge with engaging multiple-choice questions.', color: 'bg-rose-100 text-rose-800 border-rose-300' },
 ];
 
 export function TeacherChapterSetupPage() {
@@ -133,9 +131,6 @@ export function TeacherChapterSetupPage() {
       return () => clearTimeout(timer);
     }
   }, [isLoading]);
-  const [interactiveAssignments, setInteractiveAssignments] = useState<Record<string, boolean>>(
-    Object.fromEntries(INTERACTIVE_ASSIGNMENT_TYPES.map(a => [a.type, false]))
-  );
 
   // ─── Content Library state ────────────────────────────────────────────────
   const [showLibrary, setShowLibrary] = useState(false);
@@ -735,7 +730,7 @@ export function TeacherChapterSetupPage() {
                                 {act.asset_type === 'connect_it' && <BookOpen size={18} />}
                               </span>
                               <h3 className="font-black text-sm tracking-tight text-[#1800ad] break-words">
-                                {act.title}
+                                {isTopicCard ? toSentenceCase(act.title) : act.title}
                               </h3>
                             </div>
 
@@ -743,9 +738,11 @@ export function TeacherChapterSetupPage() {
                           </div>
 
                           {/* Description */}
-                          <p className="text-xs font-semibold leading-relaxed text-[#1800ad]/80 mb-4">
-                            {act.desc}
-                          </p>
+                          {act.desc && act.desc.toLowerCase() !== act.title.toLowerCase() && (
+                            <p className="text-xs font-semibold leading-relaxed text-[#1800ad]/80 mb-4">
+                              {act.desc}
+                            </p>
+                          )}
 
                           {/* Expandable Preview Section */}
                           <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-2xl p-4.5 mb-4 text-xs font-semibold leading-snug">
@@ -946,49 +943,6 @@ export function TeacherChapterSetupPage() {
                     );
                   })}
                 </div>
-
-                {/* ─── Interactive Assignment Modes Section ─── */}
-                <div className="mt-8 border-t-2 border-[#1800ad]/15 pt-8">
-                  <h2 className="text-lg font-black text-[#1800ad] tracking-tight mb-1">
-                    AI Interactive Modes
-                  </h2>
-                  <p className="text-xs font-semibold opacity-75 mb-5">
-                    Assign AI-powered interactive activities alongside your chapter content. These use conversational AI to engage students.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {INTERACTIVE_ASSIGNMENT_TYPES.map((mode) => {
-                      const isSelected = interactiveAssignments[mode.type];
-                      return (
-                        <button
-                          key={mode.type}
-                          type="button"
-                          onClick={() => setInteractiveAssignments(prev => ({ ...prev, [mode.type]: !prev[mode.type] }))}
-                          className={`border-2 rounded-[24px] p-5 text-left transition-all ${
-                            isSelected
-                              ? 'border-[#1800ad] bg-[#1800ad]/5 shadow-md'
-                              : 'border-[#1800ad]/15 bg-[#f6f4ee] hover:border-[#1800ad]/40 hover:shadow-sm'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <span className={`p-2.5 rounded-xl ${isSelected ? 'bg-[#1800ad] text-[#f6f4ee]' : 'bg-[#1800ad]/5 text-[#1800ad] border border-[#1800ad]/15'}`}>
-                              {mode.icon === 'HelpCircle' && <HelpCircle size={18} />}
-                              {mode.icon === 'Sliders' && <Sliders size={18} />}
-                              {mode.icon === 'AlertCircle' && <AlertCircle size={18} />}
-                            </span>
-                            {isSelected && (
-                              <span className="w-5 h-5 bg-[#1800ad] rounded-full flex items-center justify-center">
-                                <Check size={12} className="text-[#f6f4ee] stroke-[3]" />
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="font-black text-sm text-[#1800ad] mb-1.5">{mode.label}</h3>
-                          <p className="text-[11px] font-semibold text-[#1800ad]/70 leading-relaxed">{mode.desc}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
 
               </motion.div>
             )}

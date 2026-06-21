@@ -766,7 +766,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
   };
 
-  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null) => {
+  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps?: string[]) => {
     try {
       let finalClassId = classId || resolvedClassId;
       let finalChapterId = chapterId || resolvedChapterId;
@@ -810,7 +810,8 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       const response = await api.post('/api/analytics/submit-explanation', {
         transcript: transcriptText || "No student explanation provided.",
         chapter_id: finalChapterId,
-        class_id: finalClassId
+        class_id: finalClassId,
+        ...(gaps && gaps.length > 0 ? { gaps } : {})
       });
 
       if (response && response.concept_score_id) {
@@ -857,6 +858,8 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       predOutcome = `Prediction question: "${predictionQuestion || 'N/A'}". Choice: '${predictionChoice === 'option_a' ? 'Yes' : 'No'}'. Chapter context: ${ctx}. The student predicted and needs to explain their reasoning.`;
     }
 
+    let geminiGaps: string[] | undefined;
+
     try {
       const resp = await fetch('/api/evaluate-session', {
         method: 'POST',
@@ -873,8 +876,8 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       setEvaluation(evalData);
       setIsThinking(false);
 
-      if (evalData.feedback) {
-        speakVoiceSynthesis(evalData.feedback);
+      if (Array.isArray(evalData.gaps) && evalData.gaps.length > 0) {
+        geminiGaps = evalData.gaps;
       }
 
       // Save Attempt to localStorage history separating each attempt
@@ -914,7 +917,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           console.error("Failed to submit interactive assignment:", err);
         });
       } else {
-        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId);
+        submitExplanationForAnalysis(studentText, resolvedChapterId, resolvedClassId, geminiGaps);
       }
     }
   };
@@ -1123,198 +1126,32 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           <X size={26} className="stroke-[2.5]" />
         </button>
 
-        <header className="text-center relative z-10 w-full max-w-2xl flex flex-col items-center gap-1 mt-4">
-          <div className="p-3 bg-emerald-500/25 text-emerald-300 rounded-full mb-2 shadow-lg">
-            <Award size={32} />
+        <div className="bg-white p-8 md:p-12 rounded-[32px] shadow-2xl w-full max-w-lg flex flex-col items-center text-center relative z-10 border border-[#1800ad]/15">
+          <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full mb-6 shadow-sm">
+            <CheckCircle2 size={48} className="stroke-[2.5]" />
           </div>
-          <h1 className="text-3xl md:text-5xl font-val text-white tracking-widest" style={{ textShadow: '3px 3px 0 #000' }}>
-            EVALUATION COMPLETE
-          </h1>
-          <h2 className="text-sm md:text-base font-bold text-white/80">{activityName} Log • {task.topic}</h2>
-        </header>
-
-        <div className="bg-white p-6 md:p-8 rounded-[28px] shadow-2xl w-full max-w-2xl flex flex-col gap-6 mt-6 relative z-10 border border-[#1800ad]/15 max-h-[60vh] overflow-y-auto custom-scrollbar">
           
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
-              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">Conceptual Understanding</span>
-              <span className="text-3xl font-black text-[#1800ad]">{evaluation?.understandingScore}%</span>
-              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
-                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.understandingScore}%` }}></div>
-              </div>
-            </div>
+          <h1 className="text-3xl font-black text-[#1800ad] mb-2 tracking-wide font-val" style={{ textShadow: '1px 1px 0 rgba(0,0,0,0.1)' }}>
+            Thanks for completing this task!
+          </h1>
+          <p className="text-lg font-bold text-[#1800ad]/70 mb-6">
+            You did well!
+          </p>
 
-            <div className="bg-[#f6f4ee] border border-[#1800ad]/10 rounded-[20px] p-4 flex flex-col items-center justify-center shadow-sm">
-              <span className="font-extrabold text-[10px] text-[#1800ad]/60 uppercase tracking-widest mb-1">
-                {activityName === 'Explain It' ? 'Verbal Expression' : 'Scientific Reasoning'}
-              </span>
-              <span className="text-3xl font-black text-[#1800ad]">
-                {evaluation?.expressionScore || evaluation?.reasoningScore || 80}%
-              </span>
-              <div className="w-full bg-[#1800ad]/10 h-1.5 rounded-full overflow-hidden mt-3 max-w-[120px]">
-                <div className="h-full bg-[#1800ad]" style={{ width: `${evaluation?.expressionScore || evaluation?.reasoningScore || 82}%` }}></div>
-              </div>
-            </div>
-          </div>
-
-          {activityName === 'Predict It' && evaluation?.predictionAccuracy && (
-            <div className={`p-4 rounded-[20px] border flex items-center justify-between shadow-sm ${
-              correctPredictions 
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-                : 'bg-amber-50 border-amber-200 text-amber-800'
-            }`}>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold opacity-70">Outcome Prediction</span>
-                <span className="font-bold text-xs">You predicted that the sphere would {predictionChoice}!</span>
-              </div>
-              <span className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-full shadow-sm text-white ${
-                correctPredictions ? 'bg-emerald-500' : 'bg-amber-500'
-              }`}>
-                {evaluation.predictionAccuracy} Prediction
-              </span>
+          {evaluation?.gaps && evaluation.gaps.length > 0 && (
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-8 w-full">
+              <p className="text-sm text-[#1800ad]/80 font-semibold leading-relaxed">
+                Keep practicing — you're building strong understanding!
+              </p>
             </div>
           )}
 
-          {evaluation?.feedback && (
-            <div className="bg-blue-50 border border-blue-100 rounded-[20px] p-4 flex items-start gap-3 text-left">
-              <span className="text-xl shrink-0">💬</span>
-              <div className="flex flex-col">
-                <span className="text-[11px] font-black text-[#1800ad]/60 uppercase tracking-wider">Mootion's Audit Report</span>
-                <p className="text-xs text-[#1800ad]/80 italic font-semibold leading-relaxed mt-1">
-                  "{evaluation.feedback}"
-                </p>
-              </div>
-            </div>
-          )}
-
-          {analyticsResult && (
-            <div className="bg-[#f0f4ff] border-2 border-[#1800ad]/20 rounded-[24px] p-5 flex flex-col gap-4 text-left shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">✨</span>
-                <span className="font-black text-xs text-[#1800ad] uppercase tracking-widest font-mono">
-                  Conceptual Explanation Evaluation (Attempt #{analyticsResult.attempt_number})
-                </span>
-              </div>
-              
-              <div className="flex flex-col gap-3">
-                {/* Clarity score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Clarity</span>
-                    <span>{analyticsResult.clarity_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.clarity_score > 7 ? 'bg-emerald-500' : analyticsResult.clarity_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.clarity_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Accuracy score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Accuracy</span>
-                    <span>{analyticsResult.accuracy_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.accuracy_score > 7 ? 'bg-emerald-500' : analyticsResult.accuracy_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.accuracy_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Depth score bar */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs font-bold text-[#1800ad]">
-                    <span>Depth</span>
-                    <span>{analyticsResult.depth_score}/10</span>
-                  </div>
-                  <div className="w-full bg-[#1800ad]/10 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        analyticsResult.depth_score > 7 ? 'bg-emerald-500' : analyticsResult.depth_score >= 4 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`} 
-                      style={{ width: `${analyticsResult.depth_score * 10}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-
-              {analyticsResult.llm_feedback && (
-                <div className="bg-white border border-[#1800ad]/10 rounded-xl p-3 text-xs text-[#1800ad]/80 leading-relaxed font-semibold">
-                  {analyticsResult.llm_feedback}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => navigate('/student/analytics')}
-                className="w-full py-2.5 bg-[#1800ad] hover:bg-[#1800ad]/90 text-white rounded-full font-black text-xs uppercase tracking-wider shadow transition-all hover:scale-101 active:scale-99"
-              >
-                View Full Analytics
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-4 text-left">
-            <div className="flex flex-col gap-2">
-              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                Key Conceptual Strengths
-              </h5>
-              <div className="flex flex-wrap gap-1.5">
-                {evaluation?.strengths?.map((str, idx) => (
-                  <span key={idx} className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-3 py-1 font-bold text-xs rounded-full">
-                    {str}
-                  </span>
-                )) || <span className="text-xs text-gray-500">No strengths logged.</span>}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 mt-1">
-              <h5 className="font-black text-xs text-[#1800ad] uppercase tracking-widest flex items-center gap-1.5">
-                <Target size={14} className="text-amber-500" />
-                Gaps & Misconceptions Detected
-              </h5>
-              <div className="flex flex-col gap-1.5">
-                {evaluation?.gaps?.map((gap, idx) => (
-                  <div key={idx} className="bg-amber-50 text-amber-950 border border-amber-100 px-3 py-2 font-semibold text-xs rounded-xl flex items-start gap-1.5">
-                    <span className="text-xs text-amber-600 mt-0.5">•</span>
-                    <span>{gap}</span>
-                  </div>
-                )) || <p className="text-xs font-bold text-emerald-600 bg-emerald-50 p-3 rounded-xl w-full text-center">Perfect understanding! No learning gaps detected.</p>}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-[#1800ad]/10">
-            <button 
-              type="button"
-              onClick={() => {
-                setEvaluation(null);
-                setAnalyticsResult(null);
-                setMessages([{ role: 'Mootion', text: `Let's practice again! Let's explain ${task.topic} once and see if we can do even better!` }]);
-                setQuestionsAnswered(0);
-                setActivePlayState(activityName === 'Predict It' ? 'prediction' : 'explaining');
-              }} 
-              className="px-5 py-2.5 rounded-full font-bold border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors text-xs"
-            >
-              Try Again
-            </button>
-            <button 
-              type="button"
-              onClick={onDone} 
-              className="px-5 py-2.5 rounded-full font-bold bg-[#1800ad] text-white hover:bg-[#1800ad]/90 transition-colors shadow-md text-xs"
-            >
-              Completed Done
-            </button>
-          </div>
+          <button 
+            onClick={() => navigate('/student/playground')}
+            className="w-full py-4 bg-[#1800ad] text-white rounded-full font-bold shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all text-lg"
+          >
+            Go to Playground
+          </button>
         </div>
       </div>
     );

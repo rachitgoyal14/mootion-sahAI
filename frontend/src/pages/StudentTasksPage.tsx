@@ -60,11 +60,11 @@ const TYPE_LABELS: Record<string, string> = {
   model: '3D Model',
   explain_it: 'Explain It',
   predict_it: 'Predict It',
-  interactive_quiz: 'Interactive Quiz',
+  interactive_quiz: 'Recall It',
   EXPLAIN_IT: 'Explain It',
   PREDICT_IT: 'Predict It',
   SPOT_IT: 'Spot It',
-  INTERACTIVE_QUIZ: 'Interactive Quiz',
+  INTERACTIVE_QUIZ: 'Recall It',
 };
 
 const INTERACTIVE_TASK_TYPES = new Set([
