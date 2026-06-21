@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LogoutModal } from '../components/LogoutModal';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -52,6 +53,7 @@ export const getSketchfabEmbedUrl = (url: string | null | undefined): string => 
 };
 
 export function TeacherTopicSetupPage() {
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const { classId, chapterId, topicId } = useParams<{ classId: string; chapterId: string; topicId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -409,7 +411,7 @@ export function TeacherTopicSetupPage() {
           <NavItem icon={<MessageSquare size={24} />} onClick={() => navigate('/teacher/doubts')} />
         </nav>
 
-        <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
+        <div onClick={() => setIsLogoutModalOpen(true)} className="shrink-0 cursor-pointer flex items-center justify-center w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] hover:opacity-90 transition-all shadow-sm">
           <span className="text-[#1800ad] font-montserrat font-black text-lg">P</span>
         </div>
       </aside>
@@ -1203,6 +1205,8 @@ export function TeacherTopicSetupPage() {
         )}
       </AnimatePresence>
 
+      {/* MODAL: Logout Confirmation */}
+      <LogoutModal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} />
     </div>
   );
 }

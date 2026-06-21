@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LogoutModal } from '../components/LogoutModal';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -309,6 +310,7 @@ function VideoSimulationContent({ task }: { task: Task }) {
 // --- Main Page ---
 
 export function StudentTaskActivityPage() {
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const { taskId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -457,7 +459,7 @@ export function StudentTaskActivityPage() {
           <NavItem icon={<Gamepad2 size={24} />} onClick={() => navigate('/student/playground')} />
           <NavItem icon={<BarChart2 size={24} />} onClick={() => navigate('/student/analytics')} />
         </nav>
-        <div onClick={() => api.logout()} className="shrink-0 cursor-pointer flex items-center justify-center group w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] relative">
+        <div onClick={() => setIsLogoutModalOpen(true)} className="shrink-0 cursor-pointer flex items-center justify-center group w-12 h-12 rounded-full border-2 border-[#1800ad] bg-[#f6f4ee] relative">
            <span className="text-[#1800ad] font-bold text-lg">P</span>
         </div>
       </aside>
@@ -544,6 +546,8 @@ export function StudentTaskActivityPage() {
           )}
         </div>
       </main>
+      {/* MODAL: Logout Confirmation */}
+      <LogoutModal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} />
     </div>
   );
 }
