@@ -1003,28 +1003,18 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
               <RotateCcw size={32} />
             </div>
             <h1 className="text-3xl md:text-5xl font-val text-white tracking-widest" style={{ textShadow: '3px 3px 0 #000' }}>
-              LET'S TRY THAT AGAIN
+              THANK YOU
             </h1>
-            <h2 className="text-sm md:text-base font-bold text-white/80">{activityName} Log • {task.topic}</h2>
           </header>
 
-          <div className="bg-white p-6 md:p-8 rounded-[28px] shadow-2xl w-full max-w-2xl flex flex-col gap-6 mt-6 relative z-10 border border-[#1800ad]/15">
-            <div className="bg-blue-50 border border-blue-100 rounded-[20px] p-4 flex items-start gap-3 text-left">
-              <span className="text-xl shrink-0">💬</span>
-              <div className="flex flex-col justify-center">
-                <p className="text-xs text-[#1800ad]/80 italic font-semibold leading-relaxed">
-                  We didn't catch an explanation that time — want to try again?
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-[#1800ad]/10">
+          <div className="bg-white p-6 md:p-8 rounded-[28px] shadow-2xl w-full max-w-2xl flex flex-col relative z-10 border border-[#1800ad]/15">
+            <div className="flex justify-center gap-4 w-full">
               <button
                 type="button"
                 onClick={onDone}
-                className="px-5 py-2.5 rounded-full font-bold border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors text-xs"
+                className="flex-1 py-3.5 rounded-full font-bold border-2 border-[#1800ad] text-[#1800ad] hover:bg-[#1800ad]/5 transition-colors text-sm"
               >
-                Back to Tasks
+                View More Tasks
               </button>
               <button
                 type="button"
@@ -1034,7 +1024,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
                   setQuestionsAnswered(0);
                   setActivePlayState(activityName === 'Predict It' ? 'prediction' : 'explaining');
                 }}
-                className="px-5 py-2.5 rounded-full font-bold bg-[#1800ad] text-white hover:bg-[#1800ad]/90 transition-colors shadow-md text-xs"
+                className="flex-1 py-3.5 rounded-full font-bold bg-[#1800ad] text-white hover:bg-[#1800ad]/90 transition-colors shadow-md text-sm"
               >
                 Try Again
               </button>

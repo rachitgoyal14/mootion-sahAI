@@ -350,8 +350,65 @@ export function TeacherTopicSetupPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const isGenerating = generationEndsAt !== null;
   const selectedAsset = activeAsset;
+  const isGenerating = generationEndsAt !== null || (selectedAsset && (selectedAsset.generation_status === 'queued' || selectedAsset.generation_status === 'processing'));
+
+  useEffect(() => {
+    if (selectedAsset && (selectedAsset.generation_status === 'queued' || selectedAsset.generation_status === 'processing')) {
+      const savedEndTime = localStorage.getItem(`mootion_gen_end_${selectedAsset.asset_id}`);
+      if (savedEndTime) {
+        setGenerationEndsAt(parseInt(savedEndTime, 10));
+      } else {
+        const estimatedSeconds = selectedAsset.asset_type === 'concept_video' ? 180 : selectedAsset.asset_type === 'simulation' ? 75 : 45;
+        const endTime = Date.now() + estimatedSeconds * 1000;
+        localStorage.setItem(`mootion_gen_end_${selectedAsset.asset_id}`, endTime.toString());
+        setGenerationEndsAt(endTime);
+      }
+    } else if (selectedAsset) {
+      localStorage.removeItem(`mootion_gen_end_${selectedAsset.asset_id}`);
+      setGenerationEndsAt(null);
+    }
+  }, [selectedAsset]);
+
+  useEffect(() => {
+    let intervalId: number;
+
+    const anyGenerating = 
+      (selectedAsset && (selectedAsset.generation_status === 'queued' || selectedAsset.generation_status === 'processing')) ||
+      topicAssets.some((a: any) => a.generation_status === 'queued' || a.generation_status === 'processing');
+
+    if (anyGenerating && classId && chapterId && topicId) {
+      intervalId = window.setInterval(async () => {
+        try {
+          const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
+          setResolvedChapter(data);
+          const topic = data?.topics?.find((t: any) => t.topic_id === topicId);
+          if (topic) {
+            setActiveTopic(topic);
+            const assets = [...(topic.assets || [])]
+              .filter((a: any) => !['predict_it', 'spot_it'].includes(a.asset_type))
+              .sort((a: any, b: any) => {
+                const order = ['concept_video', 'simulation', 'three_d_model'];
+                return order.indexOf(a.asset_type) - order.indexOf(b.asset_type);
+              });
+            setTopicAssets(assets);
+            if (selectedAssetId) {
+               const updatedActiveAsset = assets.find((a: any) => a.asset_id === selectedAssetId) || topic.assets?.find((a: any) => a.asset_id === selectedAssetId);
+               if (updatedActiveAsset) {
+                  setActiveAsset(updatedActiveAsset);
+               }
+            }
+          }
+        } catch (err) {
+          console.error("Polling error:", err);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [classId, chapterId, topicId, selectedAsset, topicAssets, selectedAssetId]);
 
   // Check if payload_json is empty or minimal (scaffolding only)
   const isMinimalOrPlaceholder = 
@@ -365,7 +422,6 @@ export function TeacherTopicSetupPage() {
   const updateTopicAsset = (nextAsset: any) => {
     setSelectedAssetId(nextAsset.asset_id);
     setActiveAsset(nextAsset);
-    setGenerationEndsAt(null);
     setGenerationError(null);
     if (activeTopic) {
       setTopicAssets(prev => prev.map(asset => asset.asset_id === nextAsset.asset_id ? nextAsset : asset));
@@ -377,7 +433,9 @@ export function TeacherTopicSetupPage() {
 
     setGenerationError(null);
     const estimatedSeconds = selectedAsset.asset_type === 'concept_video' ? 180 : selectedAsset.asset_type === 'simulation' ? 75 : 45;
-    setGenerationEndsAt(Date.now() + estimatedSeconds * 1000);
+    const endTime = Date.now() + estimatedSeconds * 1000;
+    localStorage.setItem(`mootion_gen_end_${selectedAsset.asset_id}`, endTime.toString());
+    setGenerationEndsAt(endTime);
 
     try {
       const response = await api.post(`/teachers/classes/${classId}/chapters/${chapterId}/topics/${activeTopic.topic_id}/assets/${selectedAsset.asset_id}/generate`, {
@@ -387,10 +445,10 @@ export function TeacherTopicSetupPage() {
       const generatedAsset = response.asset || response;
       updateTopicAsset(generatedAsset);
       setRegenText('');
-      setGenerationEndsAt(null);
     } catch (err: any) {
       console.error('Failed to generate topic asset:', err);
       setGenerationError(err?.detail || err?.message || 'Generation failed.');
+      localStorage.removeItem(`mootion_gen_end_${selectedAsset.asset_id}`);
       setGenerationEndsAt(null);
     }
   };

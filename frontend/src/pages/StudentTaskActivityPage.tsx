@@ -475,12 +475,12 @@ export function StudentTaskActivityPage() {
              <AnimatePresence mode="wait">
                {activeActivity === 'Explain It' && (
                  <motion.div key="ExplainIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <LiveVoiceActivity task={task} activityName="Explain It" instructions="Teach the concept and answer questions." onDone={() => navigate('/student/home')} />
+                   <LiveVoiceActivity task={task} activityName="Explain It" instructions="Teach the concept and answer questions." onDone={() => navigate(backUrl)} />
                  </motion.div>
                )}
                {activeActivity === 'Connect It' && (
                  <motion.div key="ConnectIt" initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="h-full">
-                   <ConnectItActivity task={task} onDone={() => setActiveActivity(null)} />
+                   <ConnectItActivity task={task} onDone={() => navigate(backUrl)} />
                  </motion.div>
                )}
               {!activeActivity && (
