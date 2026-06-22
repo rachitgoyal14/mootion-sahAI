@@ -660,7 +660,8 @@ mootion/
 ## 📸 UI Snippet
 
 
-<img width="1917" height="1022" alt="image" src="https://github.com/user-attachments/assets/73de44bf-d678-4dfd-9871-45007ea9298a" />
+<img width="1917" height="1022" alt="image" src="https://github.com/user-attachments/assets/e021ba8c-1a76-4c41-b660-45822d0ea93d" />
+
 
 <p align="center">
   <i>Student Dashboard</i>
@@ -670,7 +671,8 @@ mootion/
 
 ---
 
-<img width="1918" height="1023" alt="image" src="https://github.com/user-attachments/assets/6410ccb3-17c6-4ce5-8e45-97208e014b7e" />
+<img width="1918" height="1023" alt="image" src="https://github.com/user-attachments/assets/16164be1-321a-4aef-91bd-b1a329390fa6" />
+
 
 <p align="center">
   <i>Explain It Assignment</i>
@@ -680,7 +682,8 @@ mootion/
 
 ---
 
-<img width="1918" height="1028" alt="image" src="https://github.com/user-attachments/assets/9b5db485-52ef-4056-870d-eab5c376b6e5" />
+<img width="1918" height="1028" alt="image" src="https://github.com/user-attachments/assets/18c4c3e6-5b2f-4d05-a821-908c8381c8a2" />
+
 
 <p align="center">
   <i>Recall It Assignment</i>
@@ -690,7 +693,8 @@ mootion/
 
 ---
 
-<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/8b3358ae-04f8-446b-b9e6-70999aae1525" />
+<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/b9f346ea-a162-429e-b719-5751e70b0ecf" />
+
 
 <p align="center">
   <i>Connect It Assignment</i>
@@ -698,7 +702,8 @@ mootion/
 <br/>
 
 ---
-<img width="1918" height="1027" alt="image" src="https://github.com/user-attachments/assets/af3b402d-2637-4c20-a39b-764e440eea58" />
+<img width="1918" height="1027" alt="image" src="https://github.com/user-attachments/assets/308ba577-2d31-40dd-a6b2-c573102936c7" />
+
 
 <p align="center">
   <i>Assigned Concept Video Interface</i>
@@ -706,7 +711,8 @@ mootion/
 <br/>
 
 ---
-<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/3697ba00-fa68-4210-b38a-79f98ff21488" />
+<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/b84c427a-4bee-4a35-8277-d7dfab93dc2e" />
+
 
 <p align="center">
   <i>Assigned 3D Model Interface</i>
@@ -714,7 +720,8 @@ mootion/
 <br/>
 
 ---
-<img width="1918" height="1022" alt="image" src="https://github.com/user-attachments/assets/ae2f2709-d076-474d-9620-7db05ce7bca5" />
+<img width="1918" height="1022" alt="image" src="https://github.com/user-attachments/assets/1318c61d-188c-4ade-bf6f-bed21c08557d" />
+
 
 <p align="center">
   <i>Interactive Playground Interface</i>
@@ -722,7 +729,8 @@ mootion/
 <br/>
 
 ---
-<img width="1918" height="1026" alt="image" src="https://github.com/user-attachments/assets/4677b34e-13b0-4285-aaad-30cbad709a21" />
+<img width="1918" height="1026" alt="image" src="https://github.com/user-attachments/assets/4c31cb00-4666-407b-ac5e-f54aac66d55d" />
+
 <p align="center">
   <i>Doubt Engine Interface</i>
 </p>
