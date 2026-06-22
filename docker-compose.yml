@@ -4,229 +4,74 @@ services:
 
   db:
     image: postgres:15-alpine
-    restart: always
-
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-
+    restart: unless-stopped
+    env_file:
+      - .env                     # root .env (only POSTGRES_* vars)
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-
-
   redis:
     image: redis:7-alpine
-    restart: always
-
-    volumes:
-      - redis_data:/data
-
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-
+    restart: unless-stopped
 
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
-
-    restart: always
-
-    environment:
-
-      DATABASE_URL: ${DATABASE_URL}
-
-      REDIS_URL: redis://redis:6379/0
-
-      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL}
-
-      MANIM_SERVICE_BASE_URL: http://animation-engine:8001
-      MANIM_SERVICE_URL: http://animation-engine:8001/explain
-
-      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
-      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
-      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI}
-
-      SKETCHFAB_API_URL: ${SKETCHFAB_API_URL}
-
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
-      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT}
-
-      AZURE_VISION_ENDPOINT: ${AZURE_VISION_ENDPOINT}
-      AZURE_VISION_API_KEY: ${AZURE_VISION_API_KEY}
-
-      R2_BUCKET: ${R2_BUCKET}
-      R2_ENDPOINT: ${R2_ENDPOINT}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
-
+      dockerfile: DockerFile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env           # backend-specific env
+    depends_on:
+      - db
+      - redis
     expose:
       - "8000"
-
-    depends_on:
-      db:
-        condition: service_healthy
-
-      redis:
-        condition: service_healthy
-
-    volumes:
-      - backend_media:/app/media
-
-
 
   worker:
     build:
       context: ./backend
-      dockerfile: Dockerfile
-
-    restart: always
-
-    command: python -m app.services.media_worker
-
-    environment:
-
-      DATABASE_URL: ${DATABASE_URL}
-
-      REDIS_URL: redis://redis:6379/0
-
-      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL}
-
-      MANIM_SERVICE_BASE_URL: http://animation-engine:8001
-      MANIM_SERVICE_URL: http://animation-engine:8001/explain
-
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
-      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT}
-
-      AZURE_VISION_ENDPOINT: ${AZURE_VISION_ENDPOINT}
-      AZURE_VISION_API_KEY: ${AZURE_VISION_API_KEY}
-
-      R2_BUCKET: ${R2_BUCKET}
-      R2_ENDPOINT: ${R2_ENDPOINT}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
-
+      dockerfile: DockerFile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env           # worker shares backend env (or create worker/.env if needed)
     depends_on:
-      db:
-        condition: service_healthy
-
-      redis:
-        condition: service_healthy
-
-    volumes:
-      - backend_media:/app/media
-
-
-
+      - backend
+      - redis
+      - db
+    command: python -m app.services.media_worker
 
   animation-engine:
     build:
       context: ./animation-engine
       dockerfile: dockerfile
-
-    restart: always
-
-    environment:
-
-      PYTHONPATH: /app/app
-
-      LLM_PROVIDER: ${LLM_PROVIDER}
-
-      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_API_KEY: ${AZURE_API_KEY}
-      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT}
-      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
-
-      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY}
-      AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION}
-
-      BEDROCK_BASE_URL: ${BEDROCK_BASE_URL}
-      BEDROCK_API_KEY: ${BEDROCK_API_KEY}
-      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID}
-
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
-
-      R2_BUCKET: ${R2_BUCKET}
-      R2_ENDPOINT: ${R2_ENDPOINT}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
-
+    restart: unless-stopped
+    env_file:
+      - ./animation-engine/app/.env   # animation-engine env
     expose:
       - "8001"
-
     volumes:
-      - animation_media:/app/media
-
-
-
+      - ./animation-engine/outputs:/app/outputs
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-
-    restart: always
-
-    environment:
-
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-
-      VITE_API_URL: /api
-
-      VITE_VIDEO_API_URL: /video-api
-
+      # we'll copy frontend/.env inside the Dockerfile during build
+    restart: unless-stopped
     expose:
       - "3000"
-
-    depends_on:
-      - backend
-
-
-
+    # No env_file needed here because we embed vars at build time
 
   nginx:
     image: nginx:alpine
-
-    restart: always
-
+    restart: unless-stopped
     ports:
-      - "1313:80"
-
+      - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-
     depends_on:
       - frontend
       - backend
       - animation-engine
 
-
-
-
 volumes:
-
   postgres_data:
-
-  redis_data:
-
-  backend_media:
-
-  animation_media:

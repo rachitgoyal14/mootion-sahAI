@@ -14,6 +14,9 @@ RUN rm -f package-lock.json && npm install
 RUN OXIDE_VER=$(node -e "console.log(require('@tailwindcss/oxide/package.json').version)") && \
     npm install @tailwindcss/oxide-linux-x64-gnu@$OXIDE_VER
 
+# Copy the frontend-specific .env file so Vite can embed it during build
+COPY .env ./
+
 COPY . .
 
 RUN npm run build

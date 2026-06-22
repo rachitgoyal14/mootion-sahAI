@@ -1,43 +1,32 @@
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    DEBCONF_NONINTERACTIVE_SEEN=true
-
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    pkg-config \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libglib2.0-dev \
-    libffi-dev \
-    texlive-latex-base \
-    texlive-latex-extra \
-    texlive-fonts-recommended \
-    texlive-luatex \
-    dvipng \
+RUN apt-get update && apt-get install -y \
     ffmpeg \
+    build-essential \
+    gcc \
+    g++ \
+    git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt && \
-    rm -rf /root/.cache/pip
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd -m appuser
-
-RUN mkdir -p /app/app/outputs && \
-    mkdir -p /app/app/media && \
+# Create writable outputs directory
+RUN useradd -m appuser && \
     mkdir -p /app/outputs && \
     chown -R appuser:appuser /app
 
 USER appuser
 
+ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/app
+
+EXPOSE 8001
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
