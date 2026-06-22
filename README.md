@@ -5,7 +5,8 @@
 </p>
 
 <h1 align="center">
-  <img width="1918" height="695" alt="image" src="https://github.com/user-attachments/assets/788e03a4-7877-46eb-9ebb-d8fed94ad382" />
+  <img width="1918" height="695" alt="image" src="https://github.com/user-attachments/assets/a57b42a6-582b-436d-9039-62f7e162a286" />
+
   &nbsp;Mootion
 </h1>
 
