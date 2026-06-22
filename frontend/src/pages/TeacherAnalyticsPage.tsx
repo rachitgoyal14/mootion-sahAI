@@ -30,6 +30,23 @@ export function TeacherAnalyticsPage() {
     fetchTeacherProfile();
   }, []);
 
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        const data = await api.get('/teachers/classes');
+        if (data && data.length > 0) {
+          const lastClassId = localStorage.getItem('mootion_last_class_id') || data[0].class_id;
+          // check if lastClassId is actually in the list
+          const exists = data.some((c: any) => c.class_id === lastClassId);
+          navigate(`/teacher/analytics/${exists ? lastClassId : data[0].class_id}`, { replace: true });
+        }
+      } catch (err) {
+        console.error('Failed to fetch classes:', err);
+      }
+    };
+    fetchClasses();
+  }, [navigate]);
+
   return (
     <div className="flex flex-1 w-full h-[100dvh] bg-[#1800ad] font-montserrat text-[#1800ad] overflow-hidden relative">
 

@@ -205,6 +205,13 @@ export function StudentTasksPage() {
         </span>
       );
     }
+    if (status === 'completed') {
+      return (
+        <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+          <CheckCircle2 size={10} /> Completed
+        </span>
+      );
+    }
     return null;
   };
 
@@ -334,15 +341,21 @@ export function StudentTasksPage() {
                         const isReady = a.status === 'ready';
                         const isPreparing = a.status === 'queued' || a.status === 'processing';
                         const isFailed = a.status === 'failed';
+                        const isCompleted = a.status === 'completed';
 
                         return (
                           <motion.div
                             key={a.assignment_id}
-                            whileHover={isReady ? { y: -4 } : {}}
-                            onClick={() => handleStart(a)}
+                            whileHover={isReady || isCompleted ? { y: -4 } : {}}
+                            onClick={() => {
+                                if (isReady) handleStart(a);
+                                else if (isCompleted) navigate('/student/analytics');
+                            }}
                             className={`relative rounded-[32px] md:rounded-[40px] p-5 md:p-8 flex flex-col justify-between gap-4 md:gap-6 overflow-hidden border-2 transition-all h-full ${
                               isReady
                                 ? 'bg-[#1800ad] text-[#f6f4ee] border-[#1800ad] shadow-lg cursor-pointer'
+                                : isCompleted
+                                ? 'bg-white text-[#1800ad] border-emerald-500/30 shadow-md cursor-pointer hover:border-emerald-500/50'
                                 : isPreparing
                                 ? 'bg-[#1800ad]/5 text-[#1800ad] border-[#1800ad]/20 cursor-default'
                                 : 'bg-[#1800ad]/5 text-[#1800ad]/50 border-[#1800ad]/10 cursor-default'
@@ -377,6 +390,10 @@ export function StudentTasksPage() {
                                 {isReady ? (
                                   <button className="flex items-center justify-center gap-2 bg-[#f6f4ee] text-[#1800ad] px-6 md:px-8 py-3 rounded-full font-bold text-base hover:bg-white hover:shadow-lg transition-all w-full sm:w-auto mt-2 sm:mt-0">
                                     Start <ArrowRight size={18} />
+                                  </button>
+                                ) : isCompleted ? (
+                                  <button className="flex items-center justify-center gap-2 bg-[#1800ad]/5 text-[#1800ad] px-6 md:px-8 py-3 rounded-full font-bold text-sm hover:bg-[#1800ad]/10 transition-all w-full sm:w-auto mt-2 sm:mt-0">
+                                    View Analytics <BarChart2 size={16} />
                                   </button>
                                 ) : isPreparing ? (
                                   <span className="text-xs text-[#1800ad]/60 font-semibold">Being prepared by your teacher...</span>

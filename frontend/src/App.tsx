@@ -9,6 +9,7 @@ import { StudentTasksPage } from './pages/StudentTasksPage';
 import { StudentTaskActivityPage } from './pages/StudentTaskActivityPage';
 import { StudentPlaygroundPage } from './pages/StudentPlaygroundPage';
 import { StudentAnalytics } from './pages/StudentAnalytics';
+import { StudentMyAnalyticsPage } from './pages/StudentMyAnalyticsPage';
 
 
 // Teacher Imports
@@ -75,7 +76,7 @@ export default function App() {
         <Route path="/student/task/:taskId" element={<ProtectedRoute allowedRole="student"><StudentTaskActivityPage /></ProtectedRoute>} />
 
         <Route path="/student/playground" element={<ProtectedRoute allowedRole="student"><StudentPlaygroundPage /></ProtectedRoute>} />
-        <Route path="/student/analytics" element={<ProtectedRoute allowedRole="student"><StudentAnalytics /></ProtectedRoute>} />
+        <Route path="/student/analytics" element={<ProtectedRoute allowedRole="student"><StudentMyAnalyticsPage /></ProtectedRoute>} />
 
         {/* Protected Teacher Routes */}
         <Route path="/teacher/login" element={<LoginRoute><TeacherLoginPage /></LoginRoute>} />

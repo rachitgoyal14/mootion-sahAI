@@ -62,7 +62,7 @@ export function TeacherClassViewPage() {
       try {
         const classes = await api.get('/teachers/classes');
         if (!active) return;
-        console.log("EXACT RAW CLASSES:", classes);
+
         
         const rawId = (id || '').toLowerCase().trim();
         

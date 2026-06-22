@@ -596,18 +596,32 @@ def list_student_assignments(db: Session, user: User, class_id: str) -> list[Stu
         .all()
     )
 
-    return [
-        StudentAssignmentListItem(
-            assignment_id=str(assignment.id),
-            class_id=str(assignment.class_id),
-            chapter_id=str(assignment.chapter_id),
-            assignment_type=assignment.assignment_type,
-            title=assignment.title,
-            status=assignment.status,
-            job_count=job_counts.get(assignment.id, 0),
+    recipients = db.query(AssignmentRecipient).filter(
+        AssignmentRecipient.student_id == user.id,
+        AssignmentRecipient.assignment_id.in_(assignment_ids)
+    ).all()
+    recipient_status_map = {r.assignment_id: r.status for r in recipients}
+
+    items = []
+    for assignment in assignments:
+        rec_status = recipient_status_map.get(assignment.id, "pending")
+        if assignment.status == "ready":
+            final_status = "completed" if rec_status == "completed" else "ready"
+        else:
+            final_status = assignment.status
+            
+        items.append(
+            StudentAssignmentListItem(
+                assignment_id=str(assignment.id),
+                class_id=str(assignment.class_id),
+                chapter_id=str(assignment.chapter_id),
+                assignment_type=assignment.assignment_type,
+                title=assignment.title,
+                status=final_status,
+                job_count=job_counts.get(assignment.id, 0),
+            )
         )
-        for assignment in assignments
-    ]
+    return items
 
 
 def get_student_assignment(db: Session, user: User, class_id: str, assignment_id: str) -> StudentAssignmentResponse:

@@ -224,7 +224,7 @@ export function TeacherChapterSetupPage() {
 
         const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
         setResolvedChapter(data);
-        console.log("Fetched chapter details on chapter detail page:", data);
+
         if (data && data.topics && data.topics.length > 0) {
           setActivities(data.topics.map((topic: any) => {
             const assets = [...(topic.assets || [])]
@@ -614,7 +614,7 @@ export function TeacherChapterSetupPage() {
                 {/* Grid of the 8 activities */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {activities.map((act) => {
-                    console.log("Rendering asset card:", act);
+
                     const isTopicCard = act.asset_type === 'topic';
                     const isReady = act.generation_status === 'ready';
                     const isDirectGeneratable = DIRECT_GENERATION_TYPES.has(act.asset_type);

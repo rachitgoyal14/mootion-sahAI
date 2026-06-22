@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import json
 import re
 import uuid
@@ -8,6 +9,8 @@ import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.core.models import (
@@ -185,6 +188,7 @@ def submit_student_attempt(
             break
         except Exception as e:
             last_exception = e
+            logger.error(f"LLM gap generation failed for student_id={student.id}, assignment_id={assignment_id}: {e}", exc_info=True)
 
     if not parsed_successfully:
         # Graceful degradation: use default scores so analytics are never blocked by LLM failures
@@ -203,40 +207,16 @@ def submit_student_attempt(
         attempt_language=language,
     )
     db.add(attempt)
+    
+    recipient = db.query(AssignmentRecipient).filter(
+        AssignmentRecipient.assignment_id == assignment.id,
+        AssignmentRecipient.student_id == student.id,
+    ).first()
+    if recipient:
+        recipient.status = "completed"
+        
     db.commit()
     db.refresh(attempt)
-
-    # Dual-Write to ConceptScore
-    try:
-        from app.core.models import ConceptScore
-        existing_count = db.query(func.count(ConceptScore.id)).filter(
-            ConceptScore.student_id == student.id,
-            ConceptScore.chapter_id == assignment.chapter_id,
-            ConceptScore.class_id == assignment.class_id
-        ).scalar() or 0
-        attempt_number = existing_count + 1
-
-        clarity_score = float(score_e) * 10.0 / 3.0
-        accuracy_score = float(score_u) * 10.0 / 3.0
-        depth_score = float(score_r) * 10.0 / 3.0
-        overall_score = (clarity_score + accuracy_score + depth_score) / 3.0
-
-        concept_score = ConceptScore(
-            student_id=student.id,
-            chapter_id=assignment.chapter_id,
-            class_id=assignment.class_id,
-            transcript=transcription_text,
-            clarity_score=clarity_score,
-            accuracy_score=accuracy_score,
-            depth_score=depth_score,
-            overall_score=overall_score,
-            llm_feedback=feedback,
-            attempt_number=attempt_number
-        )
-        db.add(concept_score)
-        db.commit()
-    except Exception as dual_write_err:
-        print(f"[student_actions_service] Dual-write to ConceptScore failed: {dual_write_err}", flush=True)
 
     return StudentAttemptResponse(
         attempt_id=str(attempt.id),
@@ -715,6 +695,8 @@ def submit_quiz_attempt(
         attempt_language="english",
     )
     db.add(attempt)
+    if recipient:
+        recipient.status = "completed"
     db.commit()
     db.refresh(attempt)
 
@@ -759,7 +741,7 @@ def submit_quiz_attempt(
                     if isinstance(parsed, list):
                         gaps = [str(g).strip() for g in parsed if g and str(g).strip()]
         except Exception as llm_err:
-            print(f"[student_actions_service] LLM gap generation failed: {llm_err}", flush=True)
+            logger.error(f"[student_actions_service] LLM gap generation failed for student_id={student.id}, assignment_id={assignment_id}: {llm_err}", exc_info=True)
 
     try:
         from app.core.models import ConceptScore
@@ -791,7 +773,7 @@ def submit_quiz_attempt(
         db.add(concept_score)
         db.commit()
     except Exception as dual_write_err:
-        print(f"[student_actions_service] Dual-write to ConceptScore failed: {dual_write_err}", flush=True)
+        logger.error(f"[student_actions_service] Dual-write to ConceptScore failed for student_id={student.id}, assignment_id={assignment_id}: {dual_write_err}", exc_info=True)
 
     return StudentAttemptResponse(
         attempt_id=str(attempt.id),
@@ -1187,3 +1169,99 @@ def get_student_activity_calendar(db: Session, user: User, year: int, month: int
         activity_counts[r.date.isoformat()] += r.count
 
     return [{"date": d, "value": val} for d, val in sorted(activity_counts.items())]
+
+
+def get_student_my_analytics(db: Session, student_id: str):
+    from app.core.models import StudentAttempt, ConceptScore, Assignment, Topic, Chapter
+    import collections
+    from uuid import UUID
+
+    # 1. Fetch ConceptScore rows for this student
+    scores = db.query(ConceptScore).filter(
+        ConceptScore.student_id == UUID(student_id),
+        ConceptScore.overall_score.isnot(None)
+    ).order_by(ConceptScore.created_at.desc()).all()
+
+    recent_attempts = []
+    misconception_map = collections.defaultdict(int)
+    total_activities = 0
+    recent_topic_name = None
+
+    for s in scores:
+        total_activities += 1
+        
+        # Determine activity type and topic/chapter
+        activity_type = "Completed Activity"
+        topic_title = "Unknown Topic"
+        chapter_title = "Unknown Chapter"
+        
+        attempt = None
+        if s.transcript:
+            attempt = db.query(StudentAttempt).filter(
+                StudentAttempt.student_id == UUID(student_id),
+                StudentAttempt.transcription_text == s.transcript
+            ).first()
+            
+        if attempt:
+            assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
+            if assignment:
+                t = assignment.assignment_type.lower()
+                if t in ("explain_it", "explain_ai"):
+                    activity_type = "Explain It"
+                elif t in ("predict_it", "predict_ai"):
+                    activity_type = "Predict It"
+                elif t in ("interactive_quiz", "quiz", "recall_it"):
+                    activity_type = "Recall It"
+                else:
+                    activity_type = assignment.assignment_type
+                    
+                topic = db.query(Topic).filter(Topic.id == assignment.topic_id).first()
+                if topic:
+                    topic_title = topic.title
+                    if recent_topic_name is None:
+                        recent_topic_name = topic.title
+                        
+        chapter = db.query(Chapter).filter(Chapter.id == s.chapter_id).first()
+        if chapter:
+            chapter_title = chapter.title
+
+        # Collect gaps
+        gaps_list = []
+        if s.gaps:
+            for gap in s.gaps:
+                g_clean = gap.strip()
+                if g_clean:
+                    gaps_list.append(g_clean)
+                    key = g_clean.lower()
+                    misconception_map[key] += 1
+
+        recent_attempts.append({
+            "topic_name": topic_title,
+            "chapter_name": chapter_title,
+            "activity_type": activity_type,
+            "score": s.overall_score,
+            "date": s.created_at.isoformat(),
+            "gaps": gaps_list
+        })
+
+    # recurring misconceptions (count >= 2)
+    recurring_misconceptions = []
+    for k, v in misconception_map.items():
+        if v >= 2:
+            # find the original casing
+            original_gap = next((g for s in scores if s.gaps for g in s.gaps if g.strip().lower() == k), k)
+            recurring_misconceptions.append({
+                "misconception": original_gap,
+                "count": v
+            })
+            
+    recurring_misconceptions.sort(key=lambda x: x["count"], reverse=True)
+
+    return {
+        "summary": {
+            "total_activities": total_activities,
+            "recent_topic_name": recent_topic_name
+        },
+        "recent_attempts": recent_attempts[:10], # Limit to last 10 attempts
+        "recurring_misconceptions": recurring_misconceptions
+    }

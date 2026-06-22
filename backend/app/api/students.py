@@ -31,7 +31,8 @@ from app.services.student_actions_service import (
     resolve_student_doubt,
     student_reply_to_doubt,
     reopen_student_doubt,
-     get_student_activity_calendar,
+    get_student_activity_calendar,
+    get_student_my_analytics,
 )
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -178,3 +179,10 @@ def get_activity_calendar(
         month = now.month
     data = get_student_activity_calendar(db, user, year, month)
     return ActivityCalendarResponse(days=data)
+
+@router.get("/me/analytics")
+def student_my_analytics(
+    user=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    return get_student_my_analytics(db, str(user.id))

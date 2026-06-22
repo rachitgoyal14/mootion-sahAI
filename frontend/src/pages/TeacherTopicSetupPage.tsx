@@ -210,7 +210,7 @@ export function TeacherTopicSetupPage() {
 
         const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
         setResolvedChapter(data);
-        console.log("Fetched chapter details in activity subpage:", data);
+
         const topic = data?.topics?.find((t: any) => t.topic_id === topicId);
         if (topic) {
           setActiveTopic(topic);
@@ -224,14 +224,14 @@ export function TeacherTopicSetupPage() {
           const initialAsset = assets[0] || null;
           setSelectedAssetId(initialAsset?.asset_id || null);
           setActiveAsset(initialAsset);
-          console.log("Fetched active topic details in activity subpage:", topic);
+
         } else if (data && data.assets) {
           const asset = data.assets.find((a: any) => a.asset_id === topicId);
           setActiveTopic(null);
           setTopicAssets([]);
           setSelectedAssetId(asset?.asset_id || null);
           setActiveAsset(asset);
-          console.log("Fetched active asset details in activity subpage:", asset);
+
         }
       } catch (err) {
         console.error("Failed to fetch chapter/asset details:", err);
@@ -244,7 +244,7 @@ export function TeacherTopicSetupPage() {
 
   // Console log asset render
   if (activeAsset) {
-    console.log("Rendering asset details on activity subpage:", activeAsset);
+
   }
 
   const activeChapterName = resolvedChapter ? resolvedChapter.title : 'Loading...';
@@ -866,6 +866,8 @@ export function TeacherTopicSetupPage() {
                         allowFullScreen
                         className="w-full h-full border-0"
                         style={{ background: '#ffffff' }}
+                        onLoad={(e) => console.log('[TopicSetup] Simulation iframe onLoad fired. src:', activeAsset.external_url)}
+                        onError={(e) => console.error('[TopicSetup] Simulation iframe onError fired. src:', activeAsset.external_url)}
                       />
                     ) : activeAsset.asset_type === 'three_d_model' ? (
                       <iframe

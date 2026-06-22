@@ -48,6 +48,14 @@ interface ClusterGroup {
   computed_at: string;
 }
 
+interface MisconceptionItem {
+  chapter_id: string;
+  chapter_title?: string;
+  misconception: string;
+  count: number;
+  activity_types: string[];
+}
+
 const cleanStudentName = (name: string) => {
   if (!name) return '';
   return name.replace(/^student\s+/i, '').trim();
@@ -77,12 +85,16 @@ export function TeacherAnalytics() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<ClassOverviewItem[]>([]);
   const [clusters, setClusters] = useState<ClusterGroup[]>([]);
+  const [misconceptions, setMisconceptions] = useState<MisconceptionItem[]>([]);
   const [chapters, setChapters] = useState<any[]>([]);
   const [classInfo, setClassInfo] = useState<any>(null);
   
   // Sorting state for overview table
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   
+  // Filtering state for misconceptions
+  const [selectedMisconceptionChapter, setSelectedMisconceptionChapter] = useState<string | null>(null);
+
   // Expanded state for cluster rows
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   
@@ -109,6 +121,9 @@ export function TeacherAnalytics() {
       // 4. Fetch Clusters
       const clustersData: ClusterGroup[] = await api.get(`/analytics/class/${classId}/clusters`);
 
+      // 5. Fetch Misconceptions
+      const misconceptionsData: MisconceptionItem[] = await api.get(`/analytics/class/${classId}/misconceptions`).catch(() => []);
+
       // Resolve chapter titles
       const resolvedOverview = overviewData.map(item => {
         const matched = fetchedChapters.find((ch: any) => ch.chapter_id === item.chapter_id);
@@ -126,11 +141,20 @@ export function TeacherAnalytics() {
         };
       });
 
+      const resolvedMisconceptions = misconceptionsData.map(item => {
+        const matched = fetchedChapters.find((ch: any) => ch.chapter_id === item.chapter_id);
+        return {
+          ...item,
+          chapter_title: matched ? matched.title : `Chapter ${item.chapter_id.substring(0, 8)}`
+        };
+      });
+
       // Sort overview initially by average score ascending
       resolvedOverview.sort((a, b) => a.avg_score - b.avg_score);
 
       setOverview(resolvedOverview);
       setClusters(resolvedClusters);
+      setMisconceptions(resolvedMisconceptions);
     } catch (err) {
       console.error("Error loading classroom analytics:", err);
     } finally {
@@ -209,6 +233,11 @@ export function TeacherAnalytics() {
       ...val
     }));
   }, [clusters]);
+
+  const filteredMisconceptions = React.useMemo(() => {
+    if (!selectedMisconceptionChapter) return misconceptions;
+    return misconceptions.filter(m => m.chapter_id === selectedMisconceptionChapter);
+  }, [misconceptions, selectedMisconceptionChapter]);
 
 
   return (
@@ -501,6 +530,89 @@ export function TeacherAnalytics() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </section>
+
+          {/* MISCONCEPTIONS SECTION */}
+          <section className="bg-white rounded-3xl p-6 sm:p-8 border-[2px] border-[#1800ad]/10 shadow-[0_8px_30px_rgba(24,0,173,0.06)] relative overflow-hidden flex flex-col mt-8">
+            <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-2xl font-black text-[#1800ad] flex items-center gap-2">
+                  <AlertTriangle className="text-rose-500" size={26} />
+                  Class Misconceptions
+                </h2>
+                <p className="text-[#1800ad]/60 text-sm font-semibold">
+                  Common gaps in understanding detected across your students
+                </p>
+              </div>
+              {chapters.length > 0 && misconceptions.length > 0 && (
+                <select 
+                  className="bg-white border-2 border-[#1800ad]/10 text-[#1800ad] font-bold px-4 py-2 rounded-xl text-sm outline-none w-full md:w-auto"
+                  value={selectedMisconceptionChapter || "all"}
+                  onChange={e => setSelectedMisconceptionChapter(e.target.value === "all" ? null : e.target.value)}
+                >
+                  <option value="all">All Chapters</option>
+                  {chapters.map(c => (
+                    <option key={c.chapter_id} value={c.chapter_id}>{c.title}</option>
+                  ))}
+                </select>
+              )}
+            </header>
+
+            {filteredMisconceptions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center bg-gray-50/50 rounded-3xl border-2 border-dashed border-[#1800ad]/10">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                  <Check className="text-emerald-500" size={32} />
+                </div>
+                <h3 className="text-lg font-bold text-[#1800ad] mb-2">
+                  {selectedMisconceptionChapter ? "No Misconceptions in this Chapter" : "No Misconceptions Detected"}
+                </h3>
+                <p className="text-[#1800ad]/60 text-sm font-semibold max-w-sm">
+                  {selectedMisconceptionChapter 
+                    ? "Students have demonstrated strong understanding of these specific concepts." 
+                    : "Either no students have attempted activities yet, or they have demonstrated full mastery."}
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {filteredMisconceptions.map((m, idx) => (
+                  <div key={idx} className="bg-[#f6f4ee] rounded-2xl p-5 border border-[#1800ad]/5 flex flex-col md:flex-row gap-4 justify-between md:items-center transition-all hover:border-[#1800ad]/10 hover:shadow-md">
+                    <div className="flex flex-col gap-2 flex-1">
+                      <span className="font-bold text-lg text-[#1800ad] leading-snug">
+                        {m.misconception}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[#1800ad]/60 mt-1">
+                        {m.chapter_title && (
+                          <span className="flex items-center gap-1">
+                            <BookOpen size={12} />
+                            {m.chapter_title}
+                          </span>
+                        )}
+                        {m.chapter_title && m.activity_types.length > 0 && <span className="opacity-40">•</span>}
+                        {m.activity_types.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="uppercase tracking-wider text-[10px] opacity-80">Sources:</span>
+                            <div className="flex items-center gap-1.5">
+                              {m.activity_types.map((type, tIdx) => (
+                                <span key={tIdx} className="bg-white px-2 py-0.5 rounded-md border border-[#1800ad]/10 text-[#1800ad] shadow-sm">
+                                  {type}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col items-center justify-center shrink-0 min-w-[80px] bg-white rounded-xl py-3 border border-rose-100 shadow-sm">
+                      <span className="text-3xl font-black text-rose-500 leading-none mb-1">{m.count}</span>
+                      <span className="text-[10px] font-bold text-rose-500/70 uppercase tracking-widest">
+                        {m.count === 1 ? 'Student' : 'Students'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>

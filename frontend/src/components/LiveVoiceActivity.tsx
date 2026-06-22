@@ -204,7 +204,7 @@ export function LiveVoiceActivity({
   const speakVoiceSynthesis = async (text: string) => {
     // If WebSocket is active, we rely on Gemini streaming audio, so skip external TTS.
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("Skipping TTS because WebSocket is active.");
+
       return;
     }
 
@@ -381,7 +381,7 @@ export function LiveVoiceActivity({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("WebSocket connected successfully to Gemini Live.");
+
         setIsWebSocketActive(true);
       };
 
@@ -446,7 +446,7 @@ export function LiveVoiceActivity({
       };
 
       ws.onclose = () => {
-        console.log("Live WebSocket disconnected");
+
         setIsWebSocketActive(false);
       };
 
@@ -804,7 +804,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           transcription_text: studentText,
           language: 'english'
         }).then(res => {
-          console.log("Interactive assignment submitted successfully:", res);
+
         }).catch(err => {
           console.error("Failed to submit interactive assignment:", err);
         });

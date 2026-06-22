@@ -18,6 +18,8 @@ from app.core.models import (
     TeacherClassMembership,
     StudentClassMembership,
     StudentTopicCluster,
+    StudentAttempt,
+    Assignment,
 )
 from app.services.chat_ai_service import _get_client, _extract_json
 from app.services.clustering_service import compute_clusters
@@ -346,6 +348,93 @@ def get_class_overview(
 
     return result
 
+
+@router.get(
+    "/class/{class_id}/misconceptions",
+    responses={
+        200: {
+            "description": "List of distinct misconceptions with frequency and source activity",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "chapter_id": "chapter-uuid",
+                            "misconception": "Light needs a medium to travel",
+                            "count": 3,
+                            "activity_types": ["Predict It", "Recall It"]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+)
+def get_class_misconceptions(
+    class_id: str,
+    user=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    membership = db.query(TeacherClassMembership).filter(
+        TeacherClassMembership.teacher_id == user.id,
+        TeacherClassMembership.class_id == UUID(class_id)
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    # Fetch concept scores with gaps
+    scores = db.query(ConceptScore).filter(
+        ConceptScore.class_id == UUID(class_id),
+        ConceptScore.gaps.isnot(None)
+    ).all()
+
+    # Find the matching activity type via StudentAttempt and Assignment
+    misconception_map = collections.defaultdict(lambda: {"count": 0, "activities": set(), "chapter_id": None})
+
+    for s in scores:
+        if not s.gaps:
+            continue
+            
+        activity_type = "Unknown"
+        if s.transcript:
+            attempt = db.query(StudentAttempt).filter(
+                StudentAttempt.student_id == s.student_id,
+                StudentAttempt.transcription_text == s.transcript
+            ).first()
+            if attempt:
+                assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
+                if assignment:
+                    t = assignment.assignment_type.lower()
+                    if t == "explain_it" or t == "explain_ai":
+                        activity_type = "Explain It"
+                    elif t == "predict_it" or t == "predict_ai":
+                        activity_type = "Predict It"
+                    elif t == "interactive_quiz" or t == "quiz" or t == "recall_it":
+                        activity_type = "Recall It"
+                    else:
+                        activity_type = assignment.assignment_type
+        
+        for gap in s.gaps:
+            gap_cleaned = gap.strip()
+            if not gap_cleaned:
+                continue
+            key = gap_cleaned.lower()
+            if misconception_map[key]["count"] == 0:
+                misconception_map[key]["misconception"] = gap_cleaned
+                misconception_map[key]["chapter_id"] = str(s.chapter_id)
+            misconception_map[key]["count"] += 1
+            misconception_map[key]["activities"].add(activity_type)
+
+    result = []
+    for m_data in misconception_map.values():
+        result.append({
+            "chapter_id": m_data["chapter_id"],
+            "misconception": m_data["misconception"],
+            "count": m_data["count"],
+            "activity_types": list(m_data["activities"])
+        })
+        
+    result.sort(key=lambda x: x["count"], reverse=True)
+    return result
 
 class ComputeClustersRequest(BaseModel):
     chapter_id: str
