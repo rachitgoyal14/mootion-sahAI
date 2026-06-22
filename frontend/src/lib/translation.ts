@@ -35,8 +35,14 @@ export const getTranslationLanguage = (): string => {
 export const setTranslationLanguage = (langCode: string) => {
   const currentLang = getTranslationLanguage();
   if (currentLang !== langCode) {
-    const targetValue = `/en/${langCode}`;
-    setCookie('googtrans', targetValue);
+    if (langCode === 'en') {
+      document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname}`;
+    } else {
+      const targetValue = `/en/${langCode}`;
+      setCookie('googtrans', targetValue);
+    }
     localStorage.setItem('mootion_language_pref', langCode);
     window.location.reload();
   }

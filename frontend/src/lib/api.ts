@@ -24,6 +24,18 @@ function refreshTokenKey(role: string | null): string {
   return `mootion_${role}_refresh_token`;
 }
 
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(callback: (token: string) => void) {
+  refreshSubscribers.push(callback);
+}
+
 async function performRequest(path: string, options: RequestInit, isRetry = false): Promise<any> {
   const role = getRole();
   const token = localStorage.getItem(tokenKey(role));
@@ -65,41 +77,56 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
       const currentRole = getRole();
       const refreshToken = localStorage.getItem(refreshTokenKey(currentRole));
       if (refreshToken) {
-        try {
-          const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ refresh_token: refreshToken }),
-          });
+        if (!isRefreshing) {
+          isRefreshing = true;
+          try {
+            const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ refresh_token: refreshToken }),
+            });
 
-          if (refreshRes.ok) {
-            const data = await refreshRes.json();
-            const role = data.role || getRole();
-            localStorage.setItem(tokenKey(role), data.access_token);
-            localStorage.setItem(refreshTokenKey(role), data.refresh_token);
-            if (data.role) {
-              localStorage.setItem('mootion_role', data.role);
+            if (refreshRes.ok) {
+              const data = await refreshRes.json();
+              const role = data.role || getRole();
+              localStorage.setItem(tokenKey(role), data.access_token);
+              localStorage.setItem(refreshTokenKey(role), data.refresh_token);
+              if (data.role) {
+                localStorage.setItem('mootion_role', data.role);
+              }
+              isRefreshing = false;
+              onRefreshed(data.access_token);
+              return performRequest(path, options, true);
+            } else {
+              isRefreshing = false;
+              refreshSubscribers = [];
+              const role = getRole();
+              localStorage.removeItem(tokenKey(role));
+              localStorage.removeItem(refreshTokenKey(role));
+              if (typeof window !== 'undefined') {
+                window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
+              }
+              throw new ApiError(refreshRes.status, 'Unauthorized refresh');
             }
-            return performRequest(path, options, true);
-          } else {
+          } catch (err: any) {
+            isRefreshing = false;
+            refreshSubscribers = [];
             const role = getRole();
             localStorage.removeItem(tokenKey(role));
             localStorage.removeItem(refreshTokenKey(role));
             if (typeof window !== 'undefined') {
               window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
             }
-            throw new ApiError(refreshRes.status, 'Unauthorized refresh');
+            throw err;
           }
-        } catch (err: any) {
-          const role = getRole();
-          localStorage.removeItem(tokenKey(role));
-          localStorage.removeItem(refreshTokenKey(role));
-          if (typeof window !== 'undefined') {
-            window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
-          }
-          throw err;
+        } else {
+          return new Promise((resolve) => {
+            addRefreshSubscriber((newToken) => {
+              resolve(performRequest(path, options, true));
+            });
+          });
         }
       } else {
         localStorage.clear();
