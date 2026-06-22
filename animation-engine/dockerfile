@@ -9,6 +9,12 @@ RUN apt-get update && apt-get install -y \
     g++ \
     git \
     curl \
+    libcairo2-dev \
+    pkg-config \
+    cmake \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

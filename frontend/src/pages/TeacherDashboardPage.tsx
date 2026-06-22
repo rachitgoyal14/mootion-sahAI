@@ -102,8 +102,8 @@ export function TeacherDashboardPage() {
       } catch (err: any) {
         console.error("Failed to fetch teacher classes:", err);
         if (err.status === 403 || err.status === 401) {
-          localStorage.removeItem('mootion_access_token');
-          localStorage.removeItem('mootion_refresh_token');
+          localStorage.removeItem('mootion_teacher_access_token');
+          localStorage.removeItem('mootion_teacher_refresh_token');
           navigate('/teacher/login');
         }
       }

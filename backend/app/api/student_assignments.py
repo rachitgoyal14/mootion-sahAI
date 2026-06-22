@@ -55,5 +55,6 @@ def submit_quiz(
         assignment_id=assignment_id,
         score=request.score,
         total_questions=request.total_questions,
+        answers=request.answers,
     )
 

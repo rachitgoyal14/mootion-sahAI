@@ -393,7 +393,8 @@ def _apply_direct_generation_result(db: Session, asset: ChapterAsset, result: di
         if not simulation_id:
             raise RuntimeError("Simulation generation did not return a simulation_id")
         _persist_simulation_result(db, result, prompt=prompt)
-        asset.external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{simulation_id}/html"
+        # Use relative path – Nginx will proxy it
+        asset.external_url = f"/simulations/{simulation_id}/html"
         asset.payload_json = {
             **asset.payload_json,
             "placeholder": False,

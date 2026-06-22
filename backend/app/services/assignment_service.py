@@ -759,8 +759,9 @@ def _apply_generation_result(db: Session, job: ChapterAssetGenerationJob, result
                 }
             else:
                 simulation_id = str(result.get("simulation_id") or "").strip()
+                # Use relative path
                 asset.external_url = (
-                    f"{settings.backend_public_url.rstrip('/')}/simulations/{simulation_id}/html"
+                    f"/simulations/{simulation_id}/html"
                     if simulation_id
                     else None
                 )

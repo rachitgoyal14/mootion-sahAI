@@ -5,8 +5,8 @@ export function NotFoundPage() {
   const navigate = useNavigate();
 
   const handleGoHome = () => {
-    const token = localStorage.getItem('mootion_access_token');
     const role = localStorage.getItem('mootion_role');
+    const token = localStorage.getItem(`mootion_${role}_access_token`);
 
     if (token && role === 'teacher') {
       navigate('/teacher/home');

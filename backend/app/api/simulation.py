@@ -241,8 +241,9 @@ async def resolve_simulation(
             url=None
         )
 
-    external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{result.simulation_id}/html" if result.phase.value == "completed" else None
-    
+    # external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{result.simulation_id}/html" if result.phase.value == "completed" else None
+    external_url = f"/simulations/{result.simulation_id}/html" if result.phase.value == "completed" else None
+
     return ResolveResponse(
         type="ai",
         simulation_id=result.simulation_id,

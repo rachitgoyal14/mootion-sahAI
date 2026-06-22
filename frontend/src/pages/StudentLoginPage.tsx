@@ -50,9 +50,10 @@ export function StudentLoginPage() {
         return;
       }
 
-      localStorage.setItem('mootion_access_token', data.access_token);
-      localStorage.setItem('mootion_refresh_token', data.refresh_token);
-      localStorage.setItem('mootion_role', data.role || 'student');
+      const role = data.role || 'student';
+      localStorage.setItem(`mootion_${role}_access_token`, data.access_token);
+      localStorage.setItem(`mootion_${role}_refresh_token`, data.refresh_token);
+      localStorage.setItem('mootion_role', role);
 
       try {
         const studentProfile = await api.get('/students/me');

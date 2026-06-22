@@ -10,8 +10,8 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const token = localStorage.getItem('mootion_access_token');
   const role = localStorage.getItem('mootion_role');
+  const token = localStorage.getItem(`mootion_${role}_access_token`);
 
   useEffect(() => {
     if (!token) {
@@ -47,8 +47,8 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
 export function LoginRoute({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const token = localStorage.getItem('mootion_access_token');
   const role = localStorage.getItem('mootion_role');
+  const token = localStorage.getItem(`mootion_${role}_access_token`);
 
   useEffect(() => {
     if (token && role) {

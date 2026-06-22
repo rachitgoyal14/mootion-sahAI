@@ -11,4 +11,7 @@ thumbnails/
 *.db
 manimenv/
 outputs/
-chroma.sqlite3
+chroma.sqlite3.env
+.env.*
+*.env
+*.env*

@@ -178,8 +178,8 @@ export function StudentHomePage() {
     } catch (err: any) {
       console.error('Failed to fetch student classes:', err);
       if (err.status === 403 || err.status === 401) {
-        localStorage.removeItem('mootion_access_token');
-        localStorage.removeItem('mootion_refresh_token');
+        localStorage.removeItem('mootion_student_access_token');
+        localStorage.removeItem('mootion_student_refresh_token');
         navigate('/login/student');
       }
     } finally {

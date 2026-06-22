@@ -12,8 +12,21 @@ export class ApiError extends Error {
   }
 }
 
+function getRole(): string | null {
+  return localStorage.getItem('mootion_role');
+}
+
+function tokenKey(role: string | null): string {
+  return `mootion_${role}_access_token`;
+}
+
+function refreshTokenKey(role: string | null): string {
+  return `mootion_${role}_refresh_token`;
+}
+
 async function performRequest(path: string, options: RequestInit, isRetry = false): Promise<any> {
-  const token = localStorage.getItem('mootion_access_token');
+  const role = getRole();
+  const token = localStorage.getItem(tokenKey(role));
   const headers = new Headers(options.headers);
 
   if (token) {
@@ -40,16 +53,17 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
     if (response.status === 401) {
       if (isRetry) {
         // Retry failed again
-        const role = localStorage.getItem('mootion_role');
-        localStorage.removeItem('mootion_access_token');
-        localStorage.removeItem('mootion_refresh_token');
+        const role = getRole();
+        localStorage.removeItem(tokenKey(role));
+        localStorage.removeItem(refreshTokenKey(role));
         if (typeof window !== 'undefined') {
           window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
         }
         throw new ApiError(401, 'Unauthorized');
       }
 
-      const refreshToken = localStorage.getItem('mootion_refresh_token');
+      const currentRole = getRole();
+      const refreshToken = localStorage.getItem(refreshTokenKey(currentRole));
       if (refreshToken) {
         try {
           const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
@@ -62,25 +76,26 @@ async function performRequest(path: string, options: RequestInit, isRetry = fals
 
           if (refreshRes.ok) {
             const data = await refreshRes.json();
-            localStorage.setItem('mootion_access_token', data.access_token);
-            localStorage.setItem('mootion_refresh_token', data.refresh_token);
+            const role = data.role || getRole();
+            localStorage.setItem(tokenKey(role), data.access_token);
+            localStorage.setItem(refreshTokenKey(role), data.refresh_token);
             if (data.role) {
               localStorage.setItem('mootion_role', data.role);
             }
             return performRequest(path, options, true);
           } else {
-            const role = localStorage.getItem('mootion_role');
-            localStorage.removeItem('mootion_access_token');
-            localStorage.removeItem('mootion_refresh_token');
+            const role = getRole();
+            localStorage.removeItem(tokenKey(role));
+            localStorage.removeItem(refreshTokenKey(role));
             if (typeof window !== 'undefined') {
               window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
             }
             throw new ApiError(refreshRes.status, 'Unauthorized refresh');
           }
         } catch (err: any) {
-          const role = localStorage.getItem('mootion_role');
-          localStorage.removeItem('mootion_access_token');
-          localStorage.removeItem('mootion_refresh_token');
+          const role = getRole();
+          localStorage.removeItem(tokenKey(role));
+          localStorage.removeItem(refreshTokenKey(role));
           if (typeof window !== 'undefined') {
             window.location.href = role === 'teacher' ? '/teacher/login' : '/onboarding';
           }
@@ -138,7 +153,8 @@ export const api = {
   }),
   delete: (path: string, options: RequestInit = {}) => request(path, { ...options, method: 'DELETE' }),
   logout: async () => {
-    const refreshToken = localStorage.getItem('mootion_refresh_token');
+    const role = getRole();
+    const refreshToken = localStorage.getItem(refreshTokenKey(role));
     if (refreshToken) {
       try {
         await fetch(`${BASE_URL}/auth/logout`, {
@@ -152,8 +168,8 @@ export const api = {
         console.error("Revoke error:", err);
       }
     }
-    localStorage.removeItem('mootion_access_token');
-    localStorage.removeItem('mootion_refresh_token');
+    localStorage.removeItem(tokenKey(role));
+    localStorage.removeItem(refreshTokenKey(role));
     localStorage.removeItem('mootion_role');
     if (typeof window !== 'undefined') {
       window.location.href = '/';

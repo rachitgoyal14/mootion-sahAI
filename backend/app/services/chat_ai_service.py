@@ -569,7 +569,8 @@ def _run_simulation_tool(db: Session, message: str, context: dict[str, Any]) -> 
     _persist_simulation_result(db, result, prompt)
     external_url = None
     if result.phase.value == "completed":
-        external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{result.simulation_id}/html"
+        # external_url = f"{settings.backend_public_url.rstrip('/')}/simulations/{result.simulation_id}/html"
+        external_url = f"/simulations/{result.simulation_id}/html"
     return {
         "asset_type": "simulation",
         "title": f"Simulation for {topic}",

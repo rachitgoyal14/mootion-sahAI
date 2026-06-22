@@ -88,14 +88,6 @@
     "title": "Vector Addition"
   },
   {
-    "topic_key": "motion 2d",
-    "aliases": ["ladybug motion", "position velocity acceleration", "2d motion graphs"],
-    "subject": "physics",
-    "grade_range": "9-11",
-    "phet_url": "https://phet.colorado.edu/sims/html/ladybug-motion-2d/latest/ladybug-motion-2d_all.html",
-    "title": "Ladybug Motion 2D"
-  },
-  {
     "topic_key": "ohm's law",
     "aliases": ["resistance", "v=ir", "current voltage resistance", "electric current"],
     "subject": "physics",
@@ -276,8 +268,8 @@
     "aliases": ["sound", "propagation of sound", "speed of sound", "sound and its properties"],
     "subject": "physics",
     "grade_range": "8-11",
-    "phet_url": "https://phet.colorado.edu/sims/html/sound/latest/sound_all.html",
-    "title": "Sound"
+    "phet_url": "https://phet.colorado.edu/sims/html/sound-waves/latest/sound-waves_all.html",
+    "title": "Sound Waves"
   },
   {
     "topic_key": "states of matter",
@@ -360,6 +352,14 @@
     "title": "Isotopes and Atomic Mass"
   },
   {
+    "topic_key": "nuclear structure",
+    "aliases": ["build a nucleus", "mass defect", "binding energy per nucleon", "nuclear stability", "nuclide chart"],
+    "subject": "physics",
+    "grade_range": "11-12",
+    "phet_url": "https://phet.colorado.edu/sims/html/build-a-nucleus/latest/build-a-nucleus_all.html",
+    "title": "Build a Nucleus"
+  },
+  {
     "topic_key": "rutherford scattering",
     "aliases": ["alpha particle scattering experiment", "nuclear model of atom", "gold foil experiment"],
     "subject": "physics",
@@ -374,46 +374,6 @@
     "grade_range": "12",
     "phet_url": "https://phet.colorado.edu/sims/html/models-of-the-hydrogen-atom/latest/models-of-the-hydrogen-atom_all.html",
     "title": "Models of the Hydrogen Atom"
-  },
-  {
-    "topic_key": "photoelectric effect",
-    "aliases": ["dual nature of radiation and matter", "work function", "einstein photoelectric equation"],
-    "subject": "physics",
-    "grade_range": "12",
-    "phet_url": "https://phet.colorado.edu/sims/html/photoelectric-effect/latest/photoelectric-effect_all.html",
-    "title": "Photoelectric Effect"
-  },
-  {
-    "topic_key": "alpha decay",
-    "aliases": ["radioactivity", "nuclear decay", "alpha particle emission"],
-    "subject": "physics",
-    "grade_range": "12",
-    "phet_url": "https://phet.colorado.edu/sims/html/alpha-decay/latest/alpha-decay_all.html",
-    "title": "Alpha Decay"
-  },
-  {
-    "topic_key": "beta decay",
-    "aliases": ["nuclear physics decay", "beta particle emission"],
-    "subject": "physics",
-    "grade_range": "12",
-    "phet_url": "https://phet.colorado.edu/sims/html/beta-decay/latest/beta-decay_all.html",
-    "title": "Beta Decay"
-  },
-  {
-    "topic_key": "nuclear fission",
-    "aliases": ["chain reaction", "nuclear energy", "splitting the atom"],
-    "subject": "physics",
-    "grade_range": "12",
-    "phet_url": "https://phet.colorado.edu/sims/html/nuclear-fission/latest/nuclear-fission_all.html",
-    "title": "Nuclear Fission"
-  },
-  {
-    "topic_key": "radioactive dating",
-    "aliases": ["half life", "carbon dating", "radioactive dating game"],
-    "subject": "physics",
-    "grade_range": "12",
-    "phet_url": "https://phet.colorado.edu/sims/html/radioactive-dating-game/latest/radioactive-dating-game_all.html",
-    "title": "Radioactive Dating Game"
   },
   {
     "topic_key": "molecule shapes",
@@ -518,22 +478,6 @@
     "grade_range": "11-12",
     "phet_url": "https://phet.colorado.edu/sims/html/atomic-interactions/latest/atomic-interactions_all.html",
     "title": "Atomic Interactions"
-  },
-  {
-    "topic_key": "solubility",
-    "aliases": ["salts and solubility", "saturated solution", "solubility product"],
-    "subject": "chemistry",
-    "grade_range": "11-12",
-    "phet_url": "https://phet.colorado.edu/sims/html/salts-and-solubility/latest/salts-and-solubility_all.html",
-    "title": "Salts and Solubility"
-  },
-  {
-    "topic_key": "sugar and salt solutions",
-    "aliases": ["ionic and covalent compounds in water", "dissolving sugar and salt"],
-    "subject": "chemistry",
-    "grade_range": "9-11",
-    "phet_url": "https://phet.colorado.edu/sims/html/sugar-and-salt-solutions/latest/sugar-and-salt-solutions_all.html",
-    "title": "Sugar and Salt Solutions"
   },
   {
     "topic_key": "graphing lines",

@@ -12,6 +12,7 @@ class StudentAttemptSubmitRequest(BaseModel):
 class QuizSubmitRequest(BaseModel):
     score: int
     total_questions: int
+    answers: dict[str, str] | None = None  # question_index -> selected_option_text
 
 
 class StudentAttemptResponse(BaseModel):

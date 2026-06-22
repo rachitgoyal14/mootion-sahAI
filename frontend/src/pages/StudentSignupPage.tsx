@@ -65,9 +65,10 @@ export function StudentSignupPage() {
       });
 
       // 2. Store tokens
-      localStorage.setItem('mootion_access_token', regRes.access_token);
-      localStorage.setItem('mootion_refresh_token', regRes.refresh_token);
-      localStorage.setItem('mootion_role', regRes.role || 'student');
+      const roleFromRes = regRes.role || 'student';
+      localStorage.setItem(`mootion_${roleFromRes}_access_token`, regRes.access_token);
+      localStorage.setItem(`mootion_${roleFromRes}_refresh_token`, regRes.refresh_token);
+      localStorage.setItem('mootion_role', roleFromRes);
 
       // 3. Set student language preferences
       await api.post('/students/language', {
@@ -140,9 +141,10 @@ export function StudentSignupPage() {
         preferred_language: selectedLanguage.toLowerCase()
       });
 
-      localStorage.setItem('mootion_access_token', regRes.access_token);
-      localStorage.setItem('mootion_refresh_token', regRes.refresh_token);
-      localStorage.setItem('mootion_role', regRes.role || 'student');
+      const roleFromRes = regRes.role || 'student';
+      localStorage.setItem(`mootion_${roleFromRes}_access_token`, regRes.access_token);
+      localStorage.setItem(`mootion_${roleFromRes}_refresh_token`, regRes.refresh_token);
+      localStorage.setItem('mootion_role', roleFromRes);
 
       await api.post('/students/language', {
         preferred_language: selectedLanguage.toLowerCase()

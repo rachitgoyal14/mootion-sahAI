@@ -44,8 +44,8 @@ export default function App() {
       return;
     }
 
-    const token = localStorage.getItem('mootion_access_token');
     const role = localStorage.getItem('mootion_role');
+    const token = localStorage.getItem(`mootion_${role}_access_token`);
     if (token && role) {
       const endpoint = role === 'teacher' ? '/teachers/me' : '/students/me';
       api.get(endpoint)

@@ -141,9 +141,10 @@ export function TeacherOnboardingPage() {
       });
 
       // 2. Store tokens
-      localStorage.setItem('mootion_access_token', regRes.access_token);
-      localStorage.setItem('mootion_refresh_token', regRes.refresh_token);
-      localStorage.setItem('mootion_role', regRes.role || 'teacher');
+      const roleFromRes = regRes.role || 'teacher';
+      localStorage.setItem(`mootion_${roleFromRes}_access_token`, regRes.access_token);
+      localStorage.setItem(`mootion_${roleFromRes}_refresh_token`, regRes.refresh_token);
+      localStorage.setItem('mootion_role', roleFromRes);
 
       // 3. Post preferences
       await api.post('/teachers/onboarding/preferences', {

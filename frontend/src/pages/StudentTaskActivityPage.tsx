@@ -57,6 +57,25 @@ function QuizContent({ task }: { task: Task }) {
   }, [task]);
 
   useEffect(() => {
+    if (isSubmitted && questions.length > 0) {
+      const classId = (task as any).dbTask?.class_id;
+      const assignmentId = task.id;
+      const correctCount = questions.filter((q, idx) => {
+        const selected = answers[idx];
+        const correct = q.options?.[q.correctAnswer];
+        return selected && correct && selected === correct;
+      }).length;
+      if (classId && assignmentId) {
+        api.post(`/students/classes/${classId}/assignments/${assignmentId}/submit-quiz`, {
+          score: correctCount,
+          total_questions: questions.length,
+          answers,
+        }).catch(() => {});
+      }
+    }
+  }, [isSubmitted]);
+
+  useEffect(() => {
     if (loading || isSubmitted || questions.length === 0) return;
     
     if (timeLeft <= 0) {
@@ -188,17 +207,20 @@ function VideoSimulationContent({ task }: { task: Task }) {
     mediaUrl = contentJson.embedUrl;
   }
 
-  // Fallback: old asset‑ID construction
+  // Fallback: only use asset‑ID construction when we have a real asset_id from a job
   if (!mediaUrl) {
     const mainJob = dbTask?.jobs?.[0];
-    const assetId = mainJob?.asset_id || task.id;
-    const BASE_URL = (import.meta as any).env?.VITE_API_URL || "/api";
-    mediaUrl = `${BASE_URL}/media/assets/${assetId}`;
+    const rawAssetId = mainJob?.asset_id;
+    if (rawAssetId && rawAssetId !== 'None') {
+      const BASE_URL = (import.meta as any).env?.VITE_API_URL || "/api";
+      mediaUrl = `${BASE_URL}/media/assets/${rawAssetId}`;
+    }
   }
 
   // For mock tasks (no dbTask) we use a sample video
   const fallbackVideo = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
-  const finalUrl = dbTask ? mediaUrl : fallbackVideo;
+  const hasValidUrl = !!(mediaUrl);
+  const finalUrl = hasValidUrl ? mediaUrl! : fallbackVideo;
 
   const renderContent = (fullscreenMode = false) => {
     // Simulation / 3D Model rendering
@@ -222,7 +244,7 @@ function VideoSimulationContent({ task }: { task: Task }) {
               </button>
             </div>
           )}
-          {dbTask ? (
+          {dbTask && hasValidUrl ? (
             <iframe
               src={finalUrl}
               title={task.topic}
@@ -230,6 +252,16 @@ function VideoSimulationContent({ task }: { task: Task }) {
               className={`w-full h-full border-0 ${fullscreenMode ? 'pt-0' : 'pt-10'}`}
               style={{ background: '#ffffff' }}
             />
+          ) : dbTask && !hasValidUrl ? (
+            <div className={`px-8 py-16 flex flex-col items-center justify-center text-center ${fullscreenMode ? 'my-auto' : 'mt-10'}`}>
+               <div className="w-16 h-16 mb-4 rounded-full bg-[#1800ad]/10 flex items-center justify-center">
+                 <div className="w-8 h-8 border-4 border-[#1800ad]/20 border-t-[#1800ad] rounded-full animate-spin"></div>
+               </div>
+               <h3 className="text-xl md:text-2xl font-black text-[#1800ad] mb-2 md:mb-4">Content is being prepared</h3>
+               <p className="text-[#1800ad]/70 font-medium max-w-lg text-sm md:text-base">
+                  The interactive content for this task is still being generated. Please check back shortly.
+               </p>
+            </div>
           ) : (
             <div className={`px-8 py-16 flex flex-col items-center justify-center text-center ${fullscreenMode ? 'my-auto' : 'mt-10'}`}>
                <Beaker size={48} className="text-[#1800ad] mb-4 md:mb-6 md:w-16 md:h-16 animate-pulse" />
@@ -345,7 +377,11 @@ export function StudentTaskActivityPage() {
         setDbTask(res);
       } catch (err: any) {
         console.error("Failed to load assignment:", err);
-        setFetchError(err?.detail || err?.message || "Failed to load assignment.");
+        if (err.status === 404) {
+          setFetchError("NOT_FOUND");
+        } else {
+          setFetchError(err?.detail || err?.message || "Failed to load assignment.");
+        }
       } finally {
         setLoadingDbTask(false);
       }
@@ -415,6 +451,20 @@ export function StudentTaskActivityPage() {
   }
 
   if (fetchError && !task) {
+    if (fetchError === "NOT_FOUND") {
+      return (
+        <div className="flex flex-1 w-full h-[100dvh] bg-[#f6f4ee] font-montserrat text-[#1800ad] flex-col items-center justify-center p-6 text-center">
+          <div className="w-20 h-20 mb-6 rounded-full bg-[#1800ad]/10 flex items-center justify-center">
+            <svg className="w-10 h-10 text-[#1800ad]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          </div>
+          <h3 className="text-2xl font-black">Task not found</h3>
+          <p className="text-sm opacity-70 mt-2 max-w-sm font-medium">This assignment may have been removed or the link is incorrect.</p>
+          <button onClick={() => navigate(backUrl)} className="mt-8 px-8 py-3 bg-[#1800ad] text-white rounded-full font-bold font-montserrat shadow-lg hover:shadow-xl transition-all">
+            Go Back
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-1 w-full h-[100dvh] bg-[#f6f4ee] font-montserrat text-rose-600 flex-col items-center justify-center p-6 text-center">
         <div className="text-4xl mb-4">⚠️</div>
@@ -428,7 +478,18 @@ export function StudentTaskActivityPage() {
   }
 
   if (!task) {
-    return <div className="p-10 font-bold text-[#1800ad]">Task not found</div>;
+    return (
+      <div className="flex flex-1 w-full h-[100dvh] bg-[#f6f4ee] font-montserrat text-[#1800ad] flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 mb-6 rounded-full bg-[#1800ad]/10 flex items-center justify-center">
+          <svg className="w-10 h-10 text-[#1800ad]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        </div>
+        <h3 className="text-2xl font-black">Task not found</h3>
+        <p className="text-sm opacity-70 mt-2 max-w-sm font-medium">We couldn't find this task. The link may be invalid or the task has been removed.</p>
+        <button onClick={() => navigate(backUrl)} className="mt-8 px-8 py-3 bg-[#1800ad] text-white rounded-full font-bold font-montserrat shadow-lg hover:shadow-xl transition-all">
+          Go Back
+        </button>
+      </div>
+    );
   }
 
   return (

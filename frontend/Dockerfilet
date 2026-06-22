@@ -1,7 +1,5 @@
 # Build Stage
 FROM node:20-slim AS builder
-ARG GEMINI_API_KEY
-ENV GEMINI_API_KEY=$GEMINI_API_KEY
 
 WORKDIR /app
 
@@ -23,8 +21,6 @@ RUN npm run build
 
 # Runner Stage
 FROM node:20-slim
-ARG GEMINI_API_KEY
-ENV GEMINI_API_KEY=$GEMINI_API_KEY
 
 WORKDIR /app
 

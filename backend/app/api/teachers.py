@@ -154,9 +154,11 @@ def get_class_students_analytics(
         StudentClassMembership,
         Assignment,
         StudentAttempt,
+        ConceptScore,
         User,
         Chapter,
     )
+    import json
 
     # Verify teacher class access
     membership = db.query(TeacherClassMembership).filter(
@@ -196,7 +198,6 @@ def get_class_students_analytics(
 
         # Calculate averages and gather completed chapters
         completed_chapters = []
-        recent_misconceptions = []
         latest_attempt = None
 
         if attempts:
@@ -214,18 +215,23 @@ def get_class_students_analytics(
                     chapter = db.query(Chapter).filter(Chapter.id == assign.chapter_id).first()
                     if chapter and chapter.title not in completed_chapters:
                         completed_chapters.append(chapter.title)
-                
-                # Check for misconceptions in AI feedback
-                if att.ai_feedback and ("misconception" in att.ai_feedback.lower() or "incorrectly" in att.ai_feedback.lower()):
-                    import re
-                    sentences = re.split(r'[.!?]', att.ai_feedback)
-                    for s in sentences:
-                        if "misconception" in s.lower() or "believe" in s.lower() or "think" in s.lower():
-                            snippet = s.strip()
-                            if snippet and snippet not in recent_misconceptions:
-                                recent_misconceptions.append(snippet)
         else:
             u_avg, r_avg, e_avg = 0.0, 0.0, 0.0
+
+        # Aggregate misconceptions from ConceptScore.gaps for this student
+        concept_rows = db.query(ConceptScore).filter(
+            ConceptScore.student_id == student.id,
+            ConceptScore.class_id == class_id,
+        ).all()
+        recent_misconceptions = []
+        for cr in concept_rows:
+            raw = cr.gaps
+            if not raw:
+                continue
+            gaps_list = raw if isinstance(raw, list) else json.loads(raw) if isinstance(raw, str) else []
+            for g in gaps_list:
+                if g and isinstance(g, str) and g not in recent_misconceptions:
+                    recent_misconceptions.append(g)
 
         ai_result = None
         if latest_attempt:

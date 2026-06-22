@@ -687,6 +687,7 @@ def submit_quiz_attempt(
     assignment_id: str,
     score: int,
     total_questions: int,
+    answers: dict[str, str] | None = None,
 ) -> StudentAttemptResponse:
     recipient = db.query(AssignmentRecipient).filter(
         AssignmentRecipient.assignment_id == assignment_id,
@@ -717,6 +718,49 @@ def submit_quiz_attempt(
     db.commit()
     db.refresh(attempt)
 
+    # Generate misconceptions from wrong quiz answers
+    gaps: list[str] = []
+    if answers and assignment.content_json:
+        try:
+            questions = (
+                assignment.content_json.get("quiz")
+                or assignment.content_json.get("questions")
+                or []
+            )
+            if questions:
+                wrong_qs = []
+                for q_idx_str, selected in answers.items():
+                    q_idx = int(q_idx_str)
+                    if q_idx < len(questions):
+                        q = questions[q_idx]
+                        correct_idx = q.get("correctAnswer")
+                        if correct_idx is None:
+                            continue
+                        correct_text = q.get("options", [])[correct_idx] if isinstance(correct_idx, int) else correct_idx
+                        if selected != correct_text:
+                            wrong_qs.append({
+                                "question": q.get("questionText") or q.get("question") or "",
+                                "student_answer": selected,
+                                "correct_answer": correct_text,
+                            })
+                if wrong_qs:
+                    prompt = (
+                        "You are assessing a student's quiz answers. "
+                        "For each incorrect answer, identify the likely science misconception the student holds. "
+                        "Return ONLY a JSON list of strings, each string being a single misconception. "
+                        "Example: [\"Student confuses heat with temperature.\", \"Student thinks light needs a medium.\"]\n\n"
+                        "Incorrect answers:\n"
+                    )
+                    for w in wrong_qs:
+                        prompt += f"- Question: {w['question']}\n  Student answered: {w['student_answer']}\n  Correct: {w['correct_answer']}\n"
+                    res = query_llm(prompt)
+                    raw = res.get("text", "") or res.get("response", "") or str(res)
+                    parsed = json.loads(raw) if raw.startswith("[") else [raw.strip()]
+                    if isinstance(parsed, list):
+                        gaps = [str(g).strip() for g in parsed if g and str(g).strip()]
+        except Exception as llm_err:
+            print(f"[student_actions_service] LLM gap generation failed: {llm_err}", flush=True)
+
     try:
         from app.core.models import ConceptScore
         existing_count = db.query(func.count(ConceptScore.id)).filter(
@@ -741,6 +785,7 @@ def submit_quiz_attempt(
             depth_score=depth_score,
             overall_score=overall_score,
             llm_feedback=feedback,
+            gaps=gaps if gaps else None,
             attempt_number=attempt_number
         )
         db.add(concept_score)
@@ -910,14 +955,40 @@ def get_chapter_analytics_drill(
                 "last_active": att.created_at.strftime("%I:%M %p"),
             })
 
+    # Aggregate real misconceptions from ConceptScore.gaps for this chapter
+    from app.core.models import ConceptScore
+    concept_rows = db.query(ConceptScore).filter(
+        ConceptScore.class_id == class_id,
+        ConceptScore.chapter_id == chapter_id,
+    ).all()
+
+    gap_counter: dict[str, int] = {}
+    total_gap_entries = 0
+    for row in concept_rows:
+        raw = row.gaps
+        if not raw:
+            continue
+        gaps_list = raw if isinstance(raw, list) else json.loads(raw) if isinstance(raw, str) else []
+        for g in gaps_list:
+            if g and isinstance(g, str):
+                gap_counter[g] = gap_counter.get(g, 0) + 1
+                total_gap_entries += 1
+
+    sorted_gaps = sorted(gap_counter.items(), key=lambda x: -x[1])
+    top_misconceptions = [
+        {
+            "text": text,
+            "count": count,
+            "percentage": round(count / total_gap_entries * 100) if total_gap_entries > 0 else 0,
+        }
+        for text, count in sorted_gaps[:3]
+    ]
+
     return {
         "chapter_id": chapter_id,
         "chapter_title": chapter.title,
         "scores_distribution": scores_dist,
-        "top_misconceptions": [
-            {"text": "Electricity moves like water, and wires are empty until switched on.", "percentage": 40},
-            {"text": "A battery contains charge particles directly rather than generating them chemically.", "percentage": 20},
-        ],
+        "top_misconceptions": top_misconceptions,
         "student_scores": student_scores,
     }
 
@@ -968,16 +1039,69 @@ def get_student_analytics_drill(
     total_lang = sum(lang_counts.values()) or 1.0
     lang_ratio = {k: round(v / total_lang, 2) for k, v in lang_counts.items()}
 
+    # Compute streak: consecutive distinct dates with activity in the last 30 days
+    from app.core.models import StudentDoubt, StudentAiChatMessage
+    attempt_dates = {att.created_at.date() for att in attempts if att.created_at}
+    doubt_dates = set()
+    if hasattr(StudentDoubt, 'student_id'):
+        doubts = db.query(StudentDoubt.created_at).filter(
+            StudentDoubt.student_id == student_id
+        ).all()
+        doubt_dates = {d[0].date() for d in doubts if d[0]}
+    chat_dates = set()
+    if hasattr(StudentAiChatMessage, 'student_id'):
+        chats = db.query(StudentAiChatMessage.created_at).filter(
+            StudentAiChatMessage.student_id == student_id
+        ).all()
+        chat_dates = {c[0].date() for c in chats if c[0]}
+    all_dates = sorted(attempt_dates | doubt_dates | chat_dates, reverse=True)
+    streak = 0
+    from datetime import timedelta
+    for i, d in enumerate(all_dates):
+        if i == 0:
+            streak = 1
+        elif (all_dates[i - 1] - d).days == 1:
+            streak += 1
+        else:
+            break
+
+    # Fetch real misconceptions from ConceptScore.gaps
+    from app.core.models import ConceptScore
+    concept_rows = db.query(ConceptScore).filter(
+        ConceptScore.student_id == student_id,
+    ).order_by(ConceptScore.created_at.desc()).all()
+
+    # Group gaps by text; if a gap appeared in an earlier attempt and a later
+    # attempt on the same chapter has overall_score > 7, mark it resolved.
+    chapter_latest_score: dict[str, float] = {}
+    for cr in concept_rows:
+        chap_key = str(cr.chapter_id)
+        if chap_key not in chapter_latest_score or cr.overall_score is not None:
+            chapter_latest_score[chap_key] = chapter_latest_score.get(chap_key, 0) or 0
+            if cr.overall_score is not None and cr.overall_score > chapter_latest_score[chap_key]:
+                chapter_latest_score[chap_key] = cr.overall_score
+
+    seen_gaps: list[dict] = []
+    for cr in concept_rows:
+        raw = cr.gaps
+        if not raw:
+            continue
+        gaps_list = raw if isinstance(raw, list) else json.loads(raw) if isinstance(raw, str) else []
+        for g in gaps_list:
+            if g and isinstance(g, str):
+                chap_key = str(cr.chapter_id)
+                latest = chapter_latest_score.get(chap_key, 0) or 0
+                is_resolved = latest > 7
+                if g not in [sg["text"] for sg in seen_gaps]:
+                    seen_gaps.append({"text": g, "status": "resolved" if is_resolved else "unresolved"})
+
     return {
         "student_id": student_id,
         "student_name": student.full_name,
-        "streak": 5,
+        "streak": streak,
         "score_timeline": score_timeline[:5],
-        "misconceptions_history": [
-            {"text": "Heat goes up because hot objects have negative mass.", "status": "resolved"},
-            {"text": "Light waves need medium to travel.", "status": "unresolved"},
-        ],
-        "prediction_accuracy": 75,
+        "misconceptions_history": seen_gaps[:5],
+        "prediction_accuracy": None,
         "language_ratio": lang_ratio,
         "explain_excerpts": excerpts[:3],
     }

@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
 
   db:
     image: postgres:15-alpine
     restart: unless-stopped
     env_file:
-      - .env                     # root .env (only POSTGRES_* vars)
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -20,7 +18,13 @@ services:
       dockerfile: DockerFile
     restart: unless-stopped
     env_file:
-      - ./backend/.env           # backend-specific env
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MANIM_SERVICE_URL=http://animation-engine:8001/explain
+      - MANIM_SERVICE_BASE_URL=http://animation-engine:8001
+    volumes:
+      - ./backend/sims.json:/app/sim/sims.json
     depends_on:
       - db
       - redis
@@ -33,7 +37,11 @@ services:
       dockerfile: DockerFile
     restart: unless-stopped
     env_file:
-      - ./backend/.env           # worker shares backend env (or create worker/.env if needed)
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MANIM_SERVICE_URL=http://animation-engine:8001/explain
+      - MANIM_SERVICE_BASE_URL=http://animation-engine:8001
     depends_on:
       - backend
       - redis
@@ -46,7 +54,7 @@ services:
       dockerfile: dockerfile
     restart: unless-stopped
     env_file:
-      - ./animation-engine/app/.env   # animation-engine env
+      - ./animation-engine/app/.env
     expose:
       - "8001"
     volumes:
@@ -55,11 +63,13 @@ services:
   frontend:
     build:
       context: ./frontend
-      # we'll copy frontend/.env inside the Dockerfile during build
+      args:
+        - GEMINI_API_KEY=${GEMINI_API_KEY}
     restart: unless-stopped
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     expose:
       - "3000"
-    # No env_file needed here because we embed vars at build time
 
   nginx:
     image: nginx:alpine
