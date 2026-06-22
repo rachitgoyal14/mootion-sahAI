@@ -17,7 +17,12 @@ def build_playback_url(bucket: str, key: str) -> str:
 def resolve_asset_media_url(asset: ChapterAsset) -> str | None:
     if asset.storage_bucket and asset.storage_key:
         return build_playback_url(asset.storage_bucket, asset.storage_key)
-    if asset.asset_type == "simulation" and asset.external_url and not asset.external_url.startswith(("http://", "https://")):
+    if (
+        asset.asset_type == "simulation" 
+        and asset.external_url 
+        and not asset.external_url.startswith(("http://", "https://"))
+        and not asset.external_url.startswith("/simulations/")
+    ):
         # Use relative path – Nginx will proxy it
         return f"/simulations/{asset.external_url}/html"
     return asset.external_url
