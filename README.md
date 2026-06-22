@@ -355,42 +355,58 @@ Teachers see `/teacher/analytics/:classId`:
 Mootion is a modular monolith composed of four primary services, integrated via Redis job queue and S3-compatible object storage.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     BROWSER (Port 3000)                             │
-│   React 19 + Vite + TypeScript + Tailwind v4                        │
-│                                                                     │
-│   Student Portal          Teacher Portal         Voice Interface    │
-│   /student/tasks          /teacher/analytics     LiveVoiceActivity  │
-│   /student/analytics      /teacher/dashboard     WebSocket client   │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              ▼                             ▼
-┌─────────────────────────┐   ┌─────────────────────────────────────┐
-│  Express Node Wrapper   │   │       FastAPI Backend (: 8000)      │
-│  (server.ts)            │   │                                     │
-│                         │   │  Auth (JWT + Google OAuth)          │
-│  WebSocket proxy        │   │  Curriculum (NCERT bootstrap)       │
-│  ↕ Gemini Live API      │   │  Assignments + Media status         │
-│  Audio PCM 16kHz        │   │  Analytics endpoints                │
-│                         │   │  Simulation engine (in-process)     │
-└─────────────────────────┘   │                                     │
-                              │  SQLAlchemy → SQLite / Postgres     │
-                              │  Alembic migrations                 │
-                              └──────────────┬──────────────────────┘
-                                             │
-                              ┌──────────────┴──────────────┐
-                              ▼                             ▼
-                   ┌─────────────────┐         ┌───────────────────────┐
-                   │  Redis Queue    │         │  Background Worker    │
-                   │                 │◄────────│  (BRPOP polling)      │
-                   └────────┬────────┘         │                       │
-                            │                  │  Manim Generator      │
-                            ▼                  │  Sketchfab Finder     │
-                   ┌─────────────────┐         │  Quiz Generator       │
-                   │  MinIO / R2     │◄────────│  Simulation Engine    │
-                   │  Object Storage │         └───────────────────────┘
-                   └─────────────────┘
+    ┌────────────────────────────────────────────────────────────────────────┐
+    │                          BROWSER (Port 3000)                           │
+    │              React 19 + Vite + TypeScript + Tailwind v4                │
+    │                                                                        │
+    │   Student Portal            Teacher Portal            Voice Interface  │
+    │   /student/tasks            /teacher/playground       LiveVoiceActivity│
+    │   /student/analytics        /teacher/analytics        (WS Client)      │
+    └───────────┬───────────────────────┬───────────────────────────┬────────┘
+                │                       │                           │
+                │ REST/API              │ WS Audio (PCM)            │ REST/API
+                ▼                       ▼                           ▼
+    ┌───────────────────────┐ ┌───────────────────┐     ┌────────────────────┐
+    │ Express Server (3000) │ │  Gemini Live API  │     │   FastAPI Backend  │
+    │                       │ │  WebSocket Proxy  │     │     (Port 8000)    │
+    │ Serve Client Assets   │ │  Bidirectional    │     │                    │
+    └───────────┬───────────┘ └───────────────────┘     │ Auth (JWT/OAuth),  │
+                │                                       │ Curriculum Presets,│
+                └─────────────── (Proxied REST) ───────►│ In-process HTML5   │
+                                                        │ Simulation Engine  │
+                                                        └─────────┬──────────┘
+                                                                  │
+                                                      ┌───────────┴──────────┐
+                                                      ▼                      ▼
+                                                ┌───────────┐          ┌───────────┐
+                                                │ DB Store  │          │   Redis   │
+                                                │ PostgreSQL│          │   Queue   │
+                                                │ / SQLite  │          └─────┬─────┘
+                                                └───────────┘                │
+                                                                             ▼
+                                                               ┌───────────────────┐
+                                                               │ Background Worker │
+                                                               │  (media_worker)   │
+                                                               └─────────┬─────────┘
+                                                                         │
+                                          ┌──────────────────────────────┴──────────┐
+                                          ▼ (HTTP POST /explain)                    ▼ (Search API)
+                             ┌───────────────────────────┐              ┌───────────────────────┐
+                             │ Animation Engine (:8001)  │              │     Sketchfab API     │
+                             │                           │              │    (model_finder)     │
+                             │  1. Scene / Code Planner  │              └───────────────────────┘
+                             │     (Claude / OpenAI)     │
+                             │  2. Manim Frame Renderer  │
+                             │  3. Azure Neural TTS      │
+                             │  4. ffmpeg Mux & Stitch   │
+                             └────────────┬──────────────┘
+                                          │
+                                          ▼
+                             ┌───────────────────────────┐
+                             │      Media Storage        │
+                             │    (Local File System     │
+                             │      / MinIO / R2)        │
+                             └───────────────────────────┘
 ```
 
 <br/>
@@ -835,37 +851,138 @@ python -m app.worker
 ## 📁 Project Structure
 
 ```
-mootion/
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── StudentAnalytics.tsx      # Radar chart, attempt history, weak topics
-│   │   │   ├── TeacherAnalytics.tsx      # Class overview, cluster view, drill-down
-│   │   │   ├── StudentHomePage.tsx       # Task list, pending assignments
-│   │   │   └── TeacherDashboard.tsx      # Assignment management
-│   │   └── components/
-│   │       └── LiveVoiceActivity.tsx     # Voice capture, STT fallback, score card
-│   └── server.ts                         # Express + Gemini Live WebSocket proxy
-│
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── analytics.py              # All analytics + clustering endpoints
-│   │   │   ├── auth.py                   # JWT + Google OAuth
-│   │   │   ├── assignments.py            # Assignment creation → Redis push
-│   │   │   └── simulation.py            # Simulation generation endpoint
-│   │   ├── services/
-│   │   │   └── clustering_service.py    # KMeans on ConceptScore data
-│   │   ├── simulation_engine/            # 5-stage HTML5 simulation pipeline
-│   │   ├── core/
-│   │   │   └── models.py                # All SQLAlchemy models incl. ConceptScore
-│   │   └── worker.py                    # Redis BRPOP background worker
-│   └── alembic/                         # Migration history
-│
-├── animation-engine/                    # Manim + TTS script compiler
-├── docs/
-│   └── ANALYTICS_TESTING_GUIDE.md      # Swagger + manual testing checklist
-└── README.md
+    mootion/
+    ├── frontend/
+    │   ├── src/
+    │   │   ├── app/                          # Main React App initialization files
+    │   │   ├── components/                   # Shared UI Components
+    │   │   │   ├── ChatbotFab.tsx            # Floating chatbot assistant
+    │   │   │   ├── ConnectItActivity.tsx     # Concept matching mini-game
+    │   │   │   ├── Eye.tsx                   # Eye component for look gesture trigger
+    │   │   │   ├── FAQItem.tsx
+    │   │   │   ├── GestureNavigation.tsx     # Navigation via camera gestures
+    │   │   │   ├── LiveVoiceActivity.tsx     # Voice recording, transcript evaluation
+    │   │   │   ├── LogoutModal.tsx
+    │   │   │   ├── NavItem.tsx
+    │   │   │   └── ProtectedRoute.tsx        # Auth Guard Route Wrapper
+    │   │   ├── data/
+    │   │   ├── lib/
+    │   │   │   ├── api.ts                    # HTTP API wrapper using fetch
+    │   │   │   └── translation.ts
+    │   │   ├── pages/                        # Screen Pages
+    │   │   │   ├── LandingPage.tsx           # Entry home page
+    │   │   │   ├── OnboardingPage.tsx        # General onboarding flow
+    │   │   │   ├── StudentAnalytics.tsx      # Student metrics dashboard
+    │   │   │   ├── StudentHomePage.tsx       # Student assignments/tasks portal
+    │   │   │   ├── StudentLoginPage.tsx
+    │   │   │   ├── StudentPlaygroundPage.tsx # Voice/simulation activities workspace
+    │   │   │   ├── StudentSignupPage.tsx
+    │   │   │   ├── StudentTaskActivityPage.tsx # Task execution environment
+    │   │   │   ├── StudentTasksPage.tsx
+    │   │   │   ├── TeacherAnalytics.tsx      # Aggregate classroom diagnostics
+    │   │   │   ├── TeacherAnalyticsPage.tsx
+    │   │   │   ├── TeacherBroadcastPage.tsx  # Interactive board broadcast controls
+    │   │   │   ├── TeacherChapterSetupPage.tsx # Curriculum planner per chapter
+    │   │   │   ├── TeacherClassViewPage.tsx  # Roster & assignment overview
+    │   │   │   ├── TeacherDashboardPage.tsx  # General dashboard overview
+    │   │   │   ├── TeacherDoubtsPage.tsx     # Broadcast Q&A forum
+    │   │   │   ├── TeacherLoginPage.tsx
+    │   │   │   ├── TeacherOnboardingPage.tsx
+    │   │   │   └── TeacherTopicSetupPage.tsx   # Visual asset compilation planner
+    │   │   ├── App.tsx                       # Main Router component (React Router)
+    │   │   ├── index.css
+    │   │   └── main.tsx                      # Render entry point
+    │   ├── package.json
+    │   └── tsconfig.json
+    │
+    ├── backend/
+    │   ├── app/
+    │   │   ├── api/                          # FastAPI routers
+    │   │   │   ├── analytics.py              # Clustering + concept scoring endpoints
+    │   │   │   ├── assignments.py            # Creating assignments, task schedules
+    │   │   │   ├── auth.py                   # Token authentication
+    │   │   │   ├── chapters.py               # NCERT chapters indexing
+    │   │   │   ├── chat_ai.py                # Broadcast chatbot responses
+    │   │   │   ├── curriculum.py             # Presets & manual roadmap configs
+    │   │   │   ├── health.py
+    │   │   │   ├── library.py                # Video / 3D model asset browser
+    │   │   │   ├── media.py                  # Assets & queue status checkers
+    │   │   │   ├── ocr.py                    # Hand written notes OCR
+    │   │   │   ├── simulation.py             # RAG-based HTML5 code generator
+    │   │   │   ├── student_assignments.py
+    │   │   │   ├── students.py               # Student dashboards APIs
+    │   │   │   └── teachers.py               # Classrooms, invites, broadcasts
+    │   │   ├── core/                         # Auth, Db & Settings Configuration
+    │   │   │   ├── config.py
+    │   │   │   ├── database.py               # SQLAlchemy Database engine
+    │   │   │   ├── deps.py                   # Dependency injectables (session, user)
+    │   │   │   ├── models.py                 # Core SQLAlchemy models (ConceptScore, etc.)
+    │   │   │   ├── redis.py                  # Redis Client Configuration
+    │   │   │   ├── schemas.py
+    │   │   │   ├── security.py               # Hashing & Token generation
+    │   │   │   └── storage.py                # S3 media upload configurations
+    │   │   ├── repositories/                 # SQLAlchemy DB wrappers
+    │   │   ├── schemas/                      # Pydantic schemas (Chapter, Student)
+    │   │   ├── services/                     # Business logic
+    │   │   │   ├── assignment_service.py     # Scheduling media worker tasks
+    │   │   │   ├── auth_service.py
+    │   │   │   ├── chapter_service.py        # Generating curriculum blueprints
+    │   │   │   ├── chat_ai_service.py        # Agentic assessment grading logic
+    │   │   │   ├── clustering_service.py     # KMeans concept analytics grouping
+    │   │   │   ├── curriculum_presets.py
+    │   │   │   ├── library_service.py
+    │   │   │   ├── media_queue.py            # Redis Queue helper for worker execution
+    │   │   │   ├── media_service.py
+    │   │   │   ├── media_worker.py           # Background processor for Manim/TTS queues
+    │   │   │   ├── model_finder.py           # Sketchfab API search and ranking
+    │   │   │   ├── onboarding_service.py
+    │   │   │   ├── rag_service.py            # Context retriever for STEM topics
+    │   │   │   └── student_actions_service.py
+    │   │   ├── simulation_engine/            # Interactive HTML5 generator agent
+    │   │   │   ├── agent_workflows.py        # Multi-layer layout & validation planner
+    │   │   │   ├── assessment_layer.py
+    │   │   │   ├── llm_prompts.py            # Templates for planning and coding HTML5
+    │   │   │   ├── pipeline.py               # Orchestrator running the simulation stages
+    │   │   │   ├── prompt_understanding_layer.py
+    │   │   │   ├── schemas.py
+    │   │   │   ├── scientific_validation.py
+    │   │   │   ├── simulation_builder.py
+    │   │   │   ├── simulation_planning_layer.py
+    │   │   │   ├── templates/                # Base index.html templates
+    │   │   │   └── ui_quality_layer.py
+    │   │   └── main.py                       # Backend server entry point
+    │   ├── alembic/                          # DB migrations
+    │   └── requirements.txt
+    │
+    ├── animation-engine/                    # Manim compilation & TTS compiler service
+    │   ├── app/
+    │   │   ├── prompts/                      # Subject-specific styling guidelines
+    │   │   ├── stages/                       # Generation stages
+    │   │   │   ├── stage1_scenes.py          # Scene structure generator
+    │   │   │   ├── stage2_manim.py           # Manim visual code compiler
+    │   │   │   ├── stage3_script.py          # Narrator script generator
+    │   │   │   ├── stage4_tts.py             # Azure Speech audio synthesizer
+    │   │   │   └── stage5_stitch.py          # ffmpeg video & audio stitcher
+    │   │   ├── utils/
+    │   │   │   ├── cost_tracker.py           # LLM and synthesis cost calculator
+    │   │   │   ├── generate_uid.py
+    │   │   │   ├── json_safe.py              # Nested JSON validator
+    │   │   │   ├── llm.py                    # Azure OpenAI & Anthropic client gateway
+    │   │   │   └── timestamps_extractor.py
+    │   │   └── main.py                       # FastAPI render api
+    │   └── requirements.txt
+    │
+    ├── ingestion/                           # Raw NCERT Data Parser
+    │   ├── ingest_all.py                     # Processing and embedding PDF data
+    │   └── test_azure_embeddings.py
+    │
+    ├── sim/                                 # Interactive Phet Simulator library
+    │   ├── sims.json                         # Offline mapping for STEM concepts
+    │   └── verify_phet_sims.py
+    │
+    ├── docs/                                # Technical API & Design documentation
+    ├── nginx/                               # Web reverse proxy
+    └── docker-compose.yml
 ```
 
 <br/>
