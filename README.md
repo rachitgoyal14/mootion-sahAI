@@ -427,33 +427,248 @@ Mootion is a modular monolith composed of four primary services, integrated via 
 
 Mootion utilizes a decoupled relational schema designed for high-throughput streaming analysis (Gemini Live), multi-tenant school/class grouping, and offline-first queue states. All primary keys utilize globally unique `UUIDv4` identifiers to allow local generation and synchronization.
 
-```
-   ┌──────────────────────┐               ┌──────────────────────┐
-   │        users         │               │       classes        │
-   ├──────────────────────┤               ├──────────────────────┤
-   │ id (UUID-PK)         │◄────────┐     │ id (UUID-PK)         │◄────────┐
-   │ full_name            │         │     │ school_id (UUID-FK)  │         │
-   │ role (Enum)          │         │     │ grade / subject      │         │
-   └──────────────────────┘         │     └──────────────────────┘         │
-               ▲                    │                 ▲                    │
-               │                    │                 │                    │
-   ┌───────────┴──────────┐         │     ┌───────────┴──────────┐         │
-   │   concept_scores     │         │     │       chapters       │         │
-   ├──────────────────────┤         │     ├──────────────────────┤         │
-   │ id (UUID-PK)         │         │     │ id (UUID-PK)         │         │
-   │ student_id (UUID-FK) ├─────────┘     │ class_id (UUID-FK)   ├─────────┘
-   │ chapter_id (UUID-FK) ├──────────────►│ curriculum_id (FK)   │
-   │ clarity_score(Float) │               └──────────────────────┘
-   │ accuracy_score(Float)│                           ▲
-   │ depth_score (Float)  │                           │
-   │ gaps (JSON Payload)  │               ┌───────────┴──────────┐
-   └──────────────────────┘               │    chapter_assets    │
-                                          ├──────────────────────┤
-                                          │ id (UUID-PK)         │
-                                          │ chapter_id (UUID-FK) │
-                                          │ asset_type (Enum)    │
-                                          │ generation_status    │
-                                          └──────────────────────┘
+```mermaid
+erDiagram
+  users {
+    UUID id PK
+    string login_id
+    string role
+    string full_name
+    text password_hash
+    string preferred_language
+    bool onboarding_completed
+  }
+  oauth_accounts {
+    UUID id PK
+    UUID user_id FK
+    string provider
+    string provider_user_id
+    string email
+  }
+  oauth_states {
+    UUID id PK
+    string provider
+    string requested_role
+    string state
+    datetime expires_at
+  }
+  sessions {
+    UUID id PK
+    UUID user_id FK
+    string refresh_token_hash
+    datetime expires_at
+    datetime revoked_at
+  }
+  schools {
+    UUID id PK
+    string name
+    string code
+    UUID created_by_teacher_id FK
+  }
+  teacher_school_memberships {
+    UUID id PK
+    UUID teacher_id FK
+    UUID school_id FK
+  }
+  classes {
+    UUID id PK
+    UUID school_id FK
+    string grade
+    string subject
+    string class_code
+    string display_name
+  }
+  teacher_class_memberships {
+    UUID id PK
+    UUID teacher_id FK
+    UUID class_id FK
+    bool is_primary
+  }
+  student_class_memberships {
+    UUID id PK
+    UUID student_id FK
+    UUID class_id FK
+  }
+  curriculum_plans {
+    UUID id PK
+    UUID class_id FK
+    UUID created_by_teacher_id FK
+    int version
+    string title
+    string source_type
+    string status
+    json curriculum_data
+  }
+  curriculum_snapshots {
+    UUID id PK
+    UUID curriculum_id FK
+    int version
+    string patch_operation
+    json patch_payload
+    json curriculum_data
+  }
+  chapters {
+    UUID id PK
+    UUID class_id FK
+    UUID curriculum_id FK
+    int sequence_number
+    string title
+    string status
+  }
+  chapter_assets {
+    UUID id PK
+    UUID chapter_id FK
+    string asset_type
+    string generation_status
+    json payload_json
+  }
+  chapter_topics {
+    UUID id PK
+    UUID chapter_id FK
+    int sequence_number
+    string title
+    string status
+  }
+  chapter_topic_assets {
+    UUID id PK
+    UUID topic_id FK
+    string asset_type
+    string generation_status
+    json payload_json
+  }
+  assignments {
+    UUID id PK
+    UUID class_id FK
+    UUID chapter_id FK
+    UUID created_by_teacher_id FK
+    string assignment_type
+    string title
+    string status
+    json content_json
+  }
+  assignment_recipients {
+    UUID id PK
+    UUID assignment_id FK
+    UUID student_id FK
+  }
+  chapter_asset_generation_jobs {
+    UUID id PK
+    UUID assignment_id FK
+    UUID chapter_asset_id FK
+    string asset_type
+    string status
+    int attempt_count
+  }
+  student_attempts {
+    UUID id PK
+    UUID student_id FK
+    UUID assignment_id FK
+    int score_understanding
+    int score_reasoning
+    int score_expression
+    text ai_feedback
+  }
+  student_doubts {
+    UUID id PK
+    UUID student_id FK
+    UUID class_id FK
+    string topic
+    text query_text
+    string status
+    json messages
+  }
+  user_quotas {
+    UUID id PK
+    UUID user_id FK
+    int doubt_videos_used_today
+    int playground_items_used_week
+  }
+  simulation_records {
+    UUID id PK
+    string simulation_id
+    text prompt
+    json spec_json
+    text html
+    int quality_score
+    string phase
+  }
+  student_ai_chat_threads {
+    UUID id PK
+    UUID student_id FK
+    UUID class_id FK
+    UUID chapter_id FK
+    UUID assignment_id FK
+    string title
+    string status
+    json context_json
+  }
+  student_ai_chat_messages {
+    UUID id PK
+    UUID chat_id FK
+    string role
+    text content
+    string tool_name
+    json asset_json
+  }
+  concept_scores {
+    UUID id PK
+    UUID student_id FK
+    UUID chapter_id FK
+    UUID class_id FK
+    float clarity_score
+    float accuracy_score
+    float depth_score
+    float overall_score
+    text llm_feedback
+    json gaps
+    int attempt_number
+  }
+  student_topic_clusters {
+    UUID id PK
+    UUID class_id FK
+    UUID chapter_id FK
+    string cluster_label
+    json student_ids
+    float avg_score
+  }
+
+  users ||--o{ oauth_accounts : "has"
+  users ||--o{ sessions : "has"
+  users ||--o{ teacher_school_memberships : "teaches at"
+  users ||--o{ teacher_class_memberships : "teaches"
+  users ||--o{ student_class_memberships : "enrolled"
+  users ||--o{ student_attempts : "submits"
+  users ||--o{ student_doubts : "raises"
+  users ||--o{ user_quotas : "has"
+  users ||--o{ assignment_recipients : "receives"
+  users ||--o{ student_ai_chat_threads : "chats"
+  users ||--o{ concept_scores : "scored"
+  schools ||--o{ teacher_school_memberships : "has"
+  schools ||--o{ classes : "has"
+  classes ||--o{ teacher_class_memberships : "has"
+  classes ||--o{ student_class_memberships : "has"
+  classes ||--o{ curriculum_plans : "has"
+  classes ||--o{ chapters : "has"
+  classes ||--o{ assignments : "has"
+  classes ||--o{ student_doubts : "for"
+  classes ||--o{ student_ai_chat_threads : "context"
+  classes ||--o{ concept_scores : "in"
+  classes ||--o{ student_topic_clusters : "has"
+  curriculum_plans ||--o{ curriculum_snapshots : "versioned by"
+  curriculum_plans ||--o{ chapters : "structures"
+  chapters ||--o{ chapter_assets : "has"
+  chapters ||--o{ chapter_topics : "has"
+  chapters ||--o{ assignments : "has"
+  chapters ||--o{ student_ai_chat_threads : "context"
+  chapters ||--o{ concept_scores : "for"
+  chapters ||--o{ student_topic_clusters : "for"
+  chapter_topics ||--o{ chapter_topic_assets : "has"
+  assignments ||--o{ assignment_recipients : "sent to"
+  assignments ||--o{ student_attempts : "attempted"
+  assignments ||--o{ chapter_asset_generation_jobs : "triggers"
+  assignments ||--o{ student_ai_chat_threads : "context"
+  chapter_assets ||--o{ chapter_asset_generation_jobs : "generated by"
+  student_ai_chat_threads ||--o{ student_ai_chat_messages : "contains"
 ```
 
 ### Core Architecture Domains
