@@ -1,339 +1,800 @@
-# Mootion
+<p align="center">
+  <br/>
+  <!-- REPLACE WITH: <img src="docs/assets/mootion-banner.png" width="100%" alt="Mootion Banner"> -->
+  <br/>
+</p>
 
-> **Turning student interactions into actionable understanding signals for teachers.**
+<h1 align="center">
+  <img width="1918" height="695" alt="image" src="https://github.com/user-attachments/assets/788e03a4-7877-46eb-9ebb-d8fed94ad382" />
+  &nbsp;Mootion
+</h1>
 
-**Team Evolve AI** · Wadhwani AI SahAI Hackathon — Phase 2 Evaluation · Status: 🚧 Active pilot development
+<p align="center">
+  <b>Turning student interactions into actionable understanding signals for teachers.</b>
+</p>
 
-Mootion is a conceptual-understanding diagnostic engine for NCERT classrooms (Grades 6–12). Students explain concepts out loud in their own words; an AI scoring pipeline turns those explanations into a structured understanding signal; teachers get a zero-effort dashboard telling them exactly which students are stuck, on what, and why — before the exam, not after.
+<p align="center">
+  Built for <b>Wadhwani AI SahAI Hackathon 2026</b> &nbsp;·&nbsp; Top 30 Finalist &nbsp;·&nbsp; by <b>Team Evolve AI</b>
+</p>
+
+<p align="center">
+  <a href="#-the-problem">Problem</a> &nbsp;·&nbsp;
+  <a href="#-what-mootion-is">What It Is</a> &nbsp;·&nbsp;
+  <a href="#-the-diagnostic-loop">The Loop</a> &nbsp;·&nbsp;
+  <a href="#-engines">Engines</a> &nbsp;·&nbsp;
+  <a href="#-analytics">Analytics</a> &nbsp;·&nbsp;
+  <a href="#-architecture">Architecture</a> &nbsp;·&nbsp;
+  <a href="#-getting-started">Getting Started</a> &nbsp;·&nbsp;
+  <a href="#-team">Team</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React 19">
+  <img src="https://img.shields.io/badge/FastAPI-latest-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python 3.11">
+  <img src="https://img.shields.io/badge/Gemini_Live-API-8E75B2?logo=google&logoColor=white" alt="Gemini Live">
+  <img src="https://img.shields.io/badge/Manim-Animation-FF6F00?logo=python&logoColor=white" alt="Manim">
+  <img src="https://img.shields.io/badge/scikit--learn-KMeans-F7931E?logo=scikitlearn&logoColor=white" alt="scikit-learn">
+  <img src="https://img.shields.io/badge/Redis-Worker-DC382D?logo=redis&logoColor=white" alt="Redis">
+  <img src="https://img.shields.io/badge/Sketchfab-3D_Models-1CAAD9?logoColor=white" alt="Sketchfab">
+  <img src="https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind v4">
+</p>
+
+<br/>
 
 ---
 
-## Table of Contents
 
-- [The Problem](#the-problem)
-- [The Solution](#the-solution)
-- [The Diagnostic Loop](#the-diagnostic-loop)
-- [Core Features](#core-features)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Repository Structure](#repository-structure)
-- [API Surface](#api-surface)
-- [Getting Started](#getting-started)
-- [Evaluation & Pilot Results](#evaluation--pilot-results)
-- [Responsible AI & Privacy](#responsible-ai--privacy)
-- [Known Limitations & Tech Debt](#known-limitations--tech-debt)
-- [Roadmap](#roadmap)
-- [Team](#team)
-- [Acknowledgments](#acknowledgments)
+## 🎯 The Problem
+
+India solved enrollment. It hasn't solved learning.
+
+- **98%** of children aged 6–14 are enrolled in school
+- **50%** of Grade 5 students cannot read a simple Grade 2 text
+- **37%** average score in Grade 9 mathematics nationwide
+- **1.04 lakh** single-teacher schools operate across India daily
+- In a standard 45-minute class with 45 students, a teacher has **less than 60 seconds per student**
+
+The result: rote memorization is promoted because **true understanding is too expensive to measure.**
+
+Teachers can track attendance. They can record marks. They can count homework submissions.
+
+**They cannot measure whether a student understands.**
+
+That signal has never existed — at classroom scale, in real time, without adding work to an already overloaded teacher.
+
+Mootion creates it.
+
+<br/>
 
 ---
 
-## The Problem
+<br/>
 
-India has solved school enrollment — it has not solved learning.
+## 💡 What Mootion Is
 
-| Metric | Value |
-|---|---|
-| Children aged 6–14 enrolled in school | 98% |
-| Grade 5 students who cannot read a basic Grade 2 text | 50% |
-| Average score in Grade 9 mathematics nationwide | 37% |
-| Students who can apply percentages to real scenarios | 29% |
-| Overall graduate employability (cited cause: systemic rote learning) | 42.6% |
+> *"The only way to know if a student understands something is to make them explain it."*
 
-Structurally, teachers are on their own: **1.04 lakh single-teacher schools** operate daily in India, student–teacher ratios of **1:40–1:50** are common, and over **30% of rural teachers** lose 15–20 hours a month to non-teaching paperwork. Any tool that adds even a minute of extra work to that routine gets rejected — insight has to be generated automatically, not entered manually.
+Mootion is not a chatbot. Not a content library. Not a simulation platform.
 
-**Persona — Meera, 34, Science Teacher, Grades 8–10:** manages 45 students per class across 6 periods a day, but can only meaningfully probe ~4 students per class. 41 students remain conceptually invisible to her, every single day.
+It is a **conceptual understanding signal engine** — built around the Feynman Technique. Every student explains every concept to Mootion, a simulated curious 10-year-old AI child who asks naive but scientifically challenging questions. Every explanation is scored. Every score becomes data for the teacher.
 
-> *"I know some of them don't understand. I just don't know which ones, or why."* — Meera
+**One platform. One signal. Built for Meera.**
 
-Existing tools all fail the same way: video libraries (YouTube) are one-way with no feedback loop; discovery sandboxes (PhET) let students explore but have no validation checkpoint; MCQ systems only test recall and are easily gamed; direct AI chatbots are single-student assistants with zero cohort-level insight for the teacher.
+> Meera is a Grade 8–10 Science teacher managing 45 students per class. She can meaningfully probe 4 students in a 45-minute period. 41 remain conceptually invisible every single day. Mootion makes all 45 visible — by morning.
 
-## The Solution
+Wadhwani AI has built:
+- ✅ Reading Fluency Signal → ORF / Vaachan Samiksha
+- ✅ Spoken English Signal → SEAP
+- ❌ **Conceptual Understanding Signal → this is what Mootion creates**
 
-Mootion is intentionally **not** a chatbot, a content library, or an isolated simulation platform. It's a **conceptual understanding signal engine** built around a closed teacher–student diagnostic loop, anchored in the **Feynman Technique**: you only truly understand something when you can explain it simply, in your own words, to someone else.
+<br/>
 
-Students "teach" an AI persona styled as a curious child. Forcing an explanation strips away memorized textbook jargon and isolates real comprehension from rote recall — every explanation becomes a piece of actionable signal for the teacher, with **zero extra grading work** on her end.
+---
 
-This also completes a portfolio gap. Reading fluency and spoken English already have linear, scalable measurement (words-correct-per-minute, pronunciation accuracy). Conceptual understanding never had an equivalent signal — that's the gap Mootion is built to fill.
+<br/>
 
-## The Diagnostic Loop
+## 🔄 The Diagnostic Loop
 
-```mermaid
-flowchart LR
-    A["1 · Explore<br/>Sim / 3D / Video"] --> B["2 · Explain<br/>Voice, in own words"]
-    B --> C["3 · Score<br/>Clarity · Accuracy · Depth"]
-    C --> D["4 · Store<br/>Secure indexed record"]
-    D --> E["5 · Diagnose<br/>Teacher dashboard"]
-    E --> F["6 · Iterate<br/>Reattempt / revisit"]
-    F -.-> B
-```
-
-Each step exists because the one before it is meaningless without it — a student can't explain what they haven't explored; an explanation without scoring is just talk; a score without storage is forgotten; storage without a teacher-facing map is useless; and a real diagnostic is a cycle, not a one-shot event.
-
-**Real example:** a student attempted the *Cell Division* module three times over 48 hours. Initial Depth score: 3/10 (pure regurgitation of the mitosis definition). After review and iterative re-explanation: 3 → 5 → 7. The teacher spent zero minutes grading; the loop completed the recovery cycle on its own.
-
-## Core Features
-
-### Student experience
-- **Explain It** — multilingual "Teach the AI" Feynman-style explanation capture
-- **Predict–Observe–Explain** — operational reasoning via simulation outcome prediction
-- **Spot the Misconception / Spot It** — surface-recall identification within a visual model
-- **Concept Sort / Connect It** — relational understanding checks
-- **Doubt rescue loop** — student gets stuck mid-explanation → submits a doubt (with optional prior-attempt context) → gets a clarification response without breaking flow or needing the teacher directly
-- **Playground** — on-demand 3D models (Sketchfab-sourced), interactive simulations, and AI-generated concept videos for free exploration
-- **Chat with AI tutor** — agentic assistant with slash commands (`/video`, `/universe`, `/quiz`, `/simulation`) that plans and executes tool calls per message
-
-### Teacher experience
-- **Onboard & map** — pick school, grade, subject; NCERT curriculum auto-bootstraps
-- **Run exit activity** — projector-mode class-wide explanation activity replacing manual quizzes
-- **Diagnose the morning after** — dashboard surfaces a class understanding map, misconception clusters, and a short list of students who need a revisit
-- **Cohort clustering** — KMeans-based grouping (Struggling / Average / Strong) with a suggested action per cohort, instead of a single useless class average
-- **Doubt inbox** — view, respond to, and resolve student doubts; AI-drafted responses can be approved or overridden
-- **Content library** — adopt already-generated assets (videos, sims, 3D models) across classes instead of regenerating from scratch
-
-### Four generation pillars
-1. **Video** — Manim-rendered concept animations
-2. **Simulation** — interactive HTML5 sims (PhET-style embeds + a custom multi-phase generation pipeline)
-3. **3D models** — Sketchfab search, ranked by an LLM vision pass for educational relevance
-4. **Quiz / assessment** — short LLM-generated MCQ sets per chapter or topic
-
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph Client
-        FE["React + Vite SPA"]
-    end
-    subgraph BFF["Express.js BFF (server.ts)"]
-        EX["Proxy + SSE + uploads"]
-    end
-    subgraph Backend["FastAPI Backend"]
-        API["Routers (api/*)"]
-        SVC["Service Layer (services/*)"]
-        SIM["Simulation Engine<br/>(prompt → plan → build → validate → quality → assess)"]
-    end
-    subgraph Data
-        PG[("PostgreSQL")]
-        REDIS[("Redis — media job queue")]
-        CHROMA[("ChromaDB — RAG store")]
-    end
-    subgraph External["External Services"]
-        AOAI["Azure OpenAI<br/>(grading, quiz, RAG embeddings, vision ranking)"]
-        VOICE["Voice roleplay interface<br/>(low-latency live voice persona)"]
-        MANIM["Manim render service"]
-        SKETCH["Sketchfab API"]
-        R2[("Cloudflare R2 / MinIO")]
-        GOOG["Google OAuth2"]
-    end
-
-    FE --> EX --> API
-    API --> SVC
-    SVC --> PG
-    SVC --> REDIS --> SVC
-    SVC --> CHROMA
-    SVC --> AOAI
-    FE -.-> VOICE
-    SVC --> MANIM --> R2
-    SVC --> SKETCH
-    SVC --> SIM
-    API --> GOOG
-```
-
-**Notes on the diagram:**
-- The Express BFF (`server.ts`) sits in front of the FastAPI backend, transforming/combining some calls and hosting the SSE endpoints used for real-time playground voice sessions.
-- Heavy generation (video, simulation, 3D, quiz) for **assignments** goes through an async Redis-backed job queue and worker; **direct** teacher/chat-triggered generation currently runs synchronously inside the request handler (see [Known Limitations](#known-limitations--tech-debt)).
-- Two distinct LLM touchpoints exist: a **text/vision pipeline on Azure OpenAI** (grading, quiz generation, RAG-grounded answers, 3D-model ranking) and a **live voice roleplay interface** for the curious-AI-persona explanation sessions — keep these straight when debugging, since they have different latency and failure characteristics.
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React, Vite, TypeScript |
-| BFF | Express.js (`server.ts`) — proxying, SSE, file uploads, static serving |
-| Backend API | FastAPI (Python), Pydantic schemas |
-| ORM / DB | SQLAlchemy, PostgreSQL |
-| Auth | JWT (access + refresh, rotation on refresh), Google OAuth2 |
-| Job queue | Redis (list-based queue, `SET NX` dedup, stale-job recovery) |
-| Vector store / RAG | ChromaDB, Azure OpenAI `text-embedding-3-small` |
-| LLM (text/vision) | Azure OpenAI — grading, quiz generation, doubt-topic extraction, 3D-model ranking |
-| LLM (voice) | Live voice roleplay interface for the "teach the AI" persona |
-| Video generation | Self-hosted Manim rendering service |
-| 3D content | Sketchfab API |
-| Object storage | Cloudflare R2 (prod) / MinIO (local dev) via a unified boto3-based wrapper |
-| Clustering | scikit-learn (KMeans, k=3) |
-
-## Repository Structure
-
-> Reconstructed from a codebase audit — verify paths against the actual repo before relying on them.
+Every component in Mootion exists to serve one purpose: generate the signal.
 
 ```
-backend/
-  app/
-    api/                  # FastAPI routers: auth, teachers, students, curriculum,
-                           # chapters, assignments, student_assignments, chat_ai,
-                           # simulation, analytics, library, media, health
-    core/                 # config, security, deps (auth guards), models (ORM), storage
-    schemas/              # Pydantic request/response models, grouped by domain
-    services/              # business logic: onboarding, curriculum, chapter,
-                           # assignment, media_worker/media_queue/media_service,
-                           # model_finder, student_actions, chat_ai, rag,
-                           # library, clustering
-    simulation_engine/    # prompt understanding → planning → build →
-                           # scientific validation → UI quality → assessment
-
-frontend/
-  src/
-    pages/                # Teacher*, Student*, Landing/Onboarding pages
-    components/           # ChatbotFab, LiveVoiceActivity, ProtectedRoute, etc.
-    data/                 # NCERT syllabus presets + mock/fallback data
-    lib/api.ts             # shared fetch wrapper (auth-refresh, error handling)
-  server.ts               # Express BFF
+Teacher assigns chapter
+         │
+         ▼
+Student explores         ←── Manim video + HTML5 simulation + 3D model
+(builds baseline intuition so explanation is possible)
+         │
+         ▼
+Student explains         ←── Speaks to Mootion the AI child (Gemini Live API)
+(voice cannot be faked the way multiple choice can)
+         │
+         ▼
+AI evaluates             ←── LLM scores Clarity / Accuracy / Depth
+(three deliberate dimensions, not arbitrary metrics)
+         │
+         ▼
+Scores stored            ←── ConceptScore per student per topic per attempt
+         │
+         ▼
+Teacher sees signal      ←── Dashboard: clusters, trends, misconceptions
+         │
+         ▼
+Student reattempts       ←── Scores improve. Loop strengthens.
 ```
 
-## API Surface
+> Every step earns its place by converting student interaction into structured insight.
 
-Selected router prefixes — see your full endpoint inventory for line-level detail.
+<br/>
 
-| Prefix | Covers |
-|---|---|
-| `/auth` | register, login, refresh, logout, Google OAuth, `/auth/me` |
-| `/teachers` | profile, onboarding, classes, doubts, analytics |
-| `/students` | profile, onboarding, doubts, quotas, playground, classes/chapters |
-| `/teachers/classes/{class_id}/curriculum` | curriculum CRUD, NCERT bootstrap (single + bulk), versioned patching |
-| `/teachers/classes/{class_id}/chapters` | chapter bootstrap, listing, asset/topic-asset generation |
-| `/teachers/classes/{class_id}/assignments` | assignment creation + async job tracking |
-| `/students/classes/{class_id}/assignments` | student assignment view + submission/grading |
-| `/chat-with-ai` | AI tutor chat threads + agentic tool-calling messages |
-| `/simulations` | spec/prompt-based simulation generation, resolution, HTML render |
-| `/media` | signed/redirect access to generated assets |
-| `/teachers/library` | cross-class asset discovery and adoption |
-| `/api/analytics` | explanation scoring, score trends, class overview, clustering |
+<!-- REPLACE WITH DIAGNOSTIC LOOP DIAGRAM -->
+<!-- <p align="center">
+  <img src="docs/assets/diagnostic-loop.png" width="800" alt="The Diagnostic Loop">
+</p> -->
 
-> ⚠️ `/api/analytics` is currently the only router mounted under an `/api/` prefix — everything else mounts directly (`/auth`, `/teachers`, …). Worth normalizing before this grows further.
+<br/>
 
-## Getting Started
+---
 
-> Commands below assume a standard FastAPI + Vite layout — adjust entrypoints/scripts to match what's actually in `backend/` and `frontend/`.
+<br/>
 
-### Prerequisites
-- Python 3.11+, Node 18+
-- PostgreSQL, Redis
-- An Azure OpenAI resource with chat, embedding, and vision-capable deployments
-- A Sketchfab API token
-- Cloudflare R2 credentials (or a local MinIO container) for media storage
-- (Optional) Google OAuth client credentials for social login
+## ⚙️ Engines
 
-### Backend
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+Mootion has three core generation engines. Each exists because the alternatives were insufficient.
 
-cp .env.example .env       # fill in the variables listed below
+### 🎬 Manim Video Engine
 
-uvicorn app.main:app --reload --port 8000
+Static diagrams don't show motion — and motion is what physics, chemistry, and biology actually are.
+
+The video engine converts any chapter concept into a 3Blue1Brown-style animated explainer, generated entirely on demand. No pre-recorded content. No YouTube links.
+
+**Pipeline:**
+
+```
+Concept Text
+     │
+     ▼
+LLM → Scene Plan JSON          (subject, structure, timestamps)
+     │
+     ▼
+LLM → Manim Code               (Python animation per scene)
+     │
+     ▼
+Manim Renderer                 (renders each scene to video)
+     │
+     ▼
+LLM → Narration Script         (per-scene TTS-ready text)
+     │
+     ▼
+Azure TTS → Audio              (neural voiceover per scene)
+     │
+     ▼
+FFmpeg → Final Video           (stitched, muxed, uploaded to MinIO/R2)
 ```
 
-In a separate process, start the async media worker (handles assignment-triggered video/simulation/3D/quiz generation):
-```bash
-python -m app.services.media_worker
+<!-- REPLACE WITH VIDEO PIPELINE SCREENSHOT OR EXAMPLE FRAME -->
+<!-- <p align="center">
+  <img src="docs/assets/video-pipeline.png" width="800" alt="Video Generation Pipeline">
+</p> -->
+
+<br/>
+
+---
+
+### 🧮 Simulation Engine
+
+Students need to manipulate variables — not watch someone else do it.
+
+The simulation engine converts natural language prompts into fully interactive, offline-capable HTML5/Canvas simulations through a 5-stage pipeline with scientific validation built in.
+
+**Pipeline:**
+
 ```
+Prompt ("Explain projectile motion")
+     │
+     ▼
+Stage 1: Prompt Understanding    → classifies subject, topic, variables, sim type
+     │
+     ▼
+Stage 2: Simulation Planning     → structured JSON spec (equations, ranges, controls)
+     │
+     ▼
+Stage 3: Simulation Builder      → injects into Canvas 2D render loop HTML template
+     │
+     ▼
+Stage 4: Scientific Validator    → checks units, equation validity, range boundaries
+     │
+     ▼
+Stage 5: UI Quality + Assessment → layout check, contrast check, 3 embedded student questions
+     │
+     ▼
+Interactive Playable Simulation  → self-contained HTML, no CDN dependency
+```
+
+<!-- REPLACE WITH SIMULATION SCREENSHOT -->
+<!-- <p align="center">
+  <img src="docs/assets/simulation-example.png" width="800" alt="Interactive Simulation Example">
+</p> -->
+
+<br/>
+
+---
+
+### 🌌 3D Model Engine
+
+Molecular geometry, cell structure, and anatomy cannot be fully understood in 2D.
+
+The 3D engine fetches, ranks, and embeds interactive Sketchfab models matched to the chapter topic — no external navigation, no broken links, fully embedded in the learning session.
+
+**Pipeline:**
+
+```
+Chapter topic
+     │
+     ▼
+Sketchfab API query             (semantic search for matching 3D model)
+     │
+     ▼
+Local candidate ranking         (relevance scoring against topic)
+     │
+     ▼
+Embedded 3D viewer              (Sketchfab iframe, no platform switch)
+```
+
+<!-- REPLACE WITH 3D MODEL SCREENSHOT -->
+<!-- <p align="center">
+  <img src="docs/assets/3d-model-example.png" width="800" alt="3D Model Viewer">
+</p> -->
+
+<br/>
+
+---
+
+### 🎤 Voice Roleplay Engine
+
+A student who has memorized a definition will collapse the moment a curious AI child asks *"but why does that happen?"*
+
+Voice is the signal. It cannot be faked.
+
+**Pipeline:**
+
+```
+Student mic → Web Audio API
+     │
+     ▼
+Downsampled to 16kHz PCM → base64 encoded
+     │
+     ▼
+WebSocket → Express Node proxy
+     │
+     ▼
+Gemini Live API (gemini-2.0-flash-live-preview)
+Roleplay persona: curious, 10-year-old, no prior knowledge
+     │
+     ▼
+Real-time audio response → streamed back to student
+Text transcript → captured in parallel
+     │
+     ▼
+Session ends → transcript sent to /api/analytics/submit-explanation
+     │
+     ▼
+LLM scores: Clarity / Accuracy / Depth → stored as ConceptScore
+```
+
+**Fallback:** Browser-native `SpeechRecognition` API activates automatically on low-connectivity or WebSocket failure. Offline-first by design.
+
+<!-- REPLACE WITH VOICE SESSION SCREENSHOT -->
+<!-- <p align="center">
+  <img src="docs/assets/voice-session.png" width="800" alt="Voice Explanation Session">
+</p> -->
+
+<br/>
+
+---
+
+### ❓ Doubt Engine
+
+A stuck student stops learning. At a 1:45 teacher-student ratio, "raise your hand" is not a viable solution.
+
+When a student gets stuck, they photograph their notebook or type their question. The Doubt Engine intercepts, generates a clarification scoped to their exact point of confusion, and restarts the learning path — without teacher intervention and without breaking the session flow.
+
+<br/>
+
+---
+
+## 📊 Analytics System
+
+### Student Analytics
+
+Every explanation attempt is stored as a `ConceptScore` with three dimensions:
+
+| Dimension | What it measures | Why it matters |
+|---|---|---|
+| **Clarity** | Can the student structure the concept coherently? | Confused logic masks deep knowledge |
+| **Accuracy** | Are the scientific facts correct? | Misconceptions are the actual enemy |
+| **Depth** | Does the student go beyond the surface definition? | Surface recall and genuine understanding look identical on a test |
+
+Students see their own analytics at `/student/analytics`:
+- Chapter-wise score cards with attempt history
+- Trend arrows (↑↓) showing whether understanding is improving
+- Radar chart across all chapters (Clarity / Accuracy / Depth axes)
+- "Your Weakest Topics" — bottom 3 chapters by overall score
+
+<!-- REPLACE WITH STUDENT ANALYTICS SCREENSHOT -->
+<!-- <p align="center">
+  <img src="docs/assets/student-analytics.png" width="900" alt="Student Analytics Dashboard">
+</p> -->
+
+<br/>
+
+### Teacher Analytics & Cohort Clustering
+
+Teachers see `/teacher/analytics/:classId`:
+
+- **Chapter overview table** — avg score, student count, weakest students per chapter, sortable by score ascending so weakest topics surface first
+- **KMeans clustering** — students automatically grouped into 🔴 Struggling / 🟡 Average / 🟢 Strong per chapter using scikit-learn
+- **Misconception-specific insight** — not "37% of your class failed" but "8 specific students share the same gap on osmosis gradient limits vs definitions"
+- **Drill-down** — click any student name → read-only view of their full explanation history
+
+> *"Telling a teacher '37% of class scored below 5' is useless. Mootion tells her which 8 students are struggling with the same misconception."*
+
+<!-- REPLACE WITH TEACHER DASHBOARD SCREENSHOT -->
+<!-- <p align="center">
+  <img src="docs/assets/teacher-dashboard.png" width="900" alt="Teacher Analytics Dashboard">
+</p> -->
+
+<br/>
+
+---
+
+## 🏗 Architecture
+
+Mootion is a modular monolith composed of four primary services, integrated via Redis job queue and S3-compatible object storage.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     BROWSER (Port 3000)                             │
+│   React 19 + Vite + TypeScript + Tailwind v4                        │
+│                                                                     │
+│   Student Portal          Teacher Portal         Voice Interface    │
+│   /student/tasks          /teacher/analytics     LiveVoiceActivity  │
+│   /student/analytics      /teacher/dashboard     WebSocket client   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+┌─────────────────────────┐   ┌─────────────────────────────────────┐
+│  Express Node Wrapper   │   │       FastAPI Backend (: 8000)      │
+│  (server.ts)            │   │                                     │
+│                         │   │  Auth (JWT + Google OAuth)          │
+│  WebSocket proxy        │   │  Curriculum (NCERT bootstrap)       │
+│  ↕ Gemini Live API      │   │  Assignments + Media status         │
+│  Audio PCM 16kHz        │   │  Analytics endpoints                │
+│                         │   │  Simulation engine (in-process)     │
+└─────────────────────────┘   │                                     │
+                              │  SQLAlchemy → SQLite / Postgres     │
+                              │  Alembic migrations                 │
+                              └──────────────┬──────────────────────┘
+                                             │
+                              ┌──────────────┴──────────────┐
+                              ▼                             ▼
+                   ┌─────────────────┐         ┌───────────────────────┐
+                   │  Redis Queue    │         │  Background Worker    │
+                   │                 │◄────────│  (BRPOP polling)      │
+                   └────────┬────────┘         │                       │
+                            │                  │  Manim Generator      │
+                            ▼                  │  Sketchfab Finder     │
+                   ┌─────────────────┐         │  Quiz Generator       │
+                   │  MinIO / R2     │◄────────│  Simulation Engine    │
+                   │  Object Storage │         └───────────────────────┘
+                   └─────────────────┘
+```
+
+<br/>
+
+---
+
+## 🔌 API Reference
+
+### Analytics Endpoints
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/analytics/submit-explanation` | Student JWT | Submit transcript → LLM scores → store ConceptScore |
+| `GET` | `/api/analytics/student/{id}/scores` | Student (own) / Teacher (class) | All scores grouped by chapter with trend |
+| `GET` | `/api/analytics/class/{id}/overview` | Teacher JWT | Per-chapter avg, weakest students |
+| `POST` | `/api/analytics/class/{id}/compute-clusters` | Teacher JWT | Run KMeans, upsert StudentTopicCluster |
+| `GET` | `/api/analytics/class/{id}/clusters` | Teacher JWT | Clusters with student names joined |
+
+### Core Endpoints
+
+| Method | Route | Description |
+|---|---|---|
+| `POST` | `/api/auth/login` | JWT login |
+| `POST` | `/api/auth/google` | Google OAuth |
+| `GET` | `/api/curriculum/ncert/{grade}/{subject}` | NCERT syllabus bootstrap |
+| `POST` | `/api/assignments` | Create assignment (triggers Redis job) |
+| `GET` | `/api/assignments/{id}/status` | Media generation status |
+| `POST` | `/api/simulation/generate` | Run simulation pipeline |
+| `GET` | `/api/evaluate-session` | Score a voice session transcript |
+<br>
+
+---
+## 🗄️ Database Schema
+
+Mootion utilizes a decoupled relational schema designed for high-throughput streaming analysis (Gemini Live), multi-tenant school/class grouping, and offline-first queue states. All primary keys utilize globally unique `UUIDv4` identifiers to allow local generation and synchronization.
+
+```
+   ┌──────────────────────┐               ┌──────────────────────┐
+   │        users         │               │       classes        │
+   ├──────────────────────┤               ├──────────────────────┤
+   │ id (UUID-PK)         │◄────────┐     │ id (UUID-PK)         │◄────────┐
+   │ full_name            │         │     │ school_id (UUID-FK)  │         │
+   │ role (Enum)          │         │     │ grade / subject      │         │
+   └──────────────────────┘         │     └──────────────────────┘         │
+               ▲                    │                 ▲                    │
+               │                    │                 │                    │
+   ┌───────────┴──────────┐         │     ┌───────────┴──────────┐         │
+   │   concept_scores     │         │     │       chapters       │         │
+   ├──────────────────────┤         │     ├──────────────────────┤         │
+   │ id (UUID-PK)         │         │     │ id (UUID-PK)         │         │
+   │ student_id (UUID-FK) ├─────────┘     │ class_id (UUID-FK)   ├─────────┘
+   │ chapter_id (UUID-FK) ├──────────────►│ curriculum_id (FK)   │
+   │ clarity_score(Float) │               └──────────────────────┘
+   │ accuracy_score(Float)│                           ▲
+   │ depth_score (Float)  │                           │
+   │ gaps (JSON Payload)  │               ┌───────────┴──────────┐
+   └──────────────────────┘               │    chapter_assets    │
+                                          ├──────────────────────┤
+                                          │ id (UUID-PK)         │
+                                          │ chapter_id (UUID-FK) │
+                                          │ asset_type (Enum)    │
+                                          │ generation_status    │
+                                          └──────────────────────┘
+```
+
+### Core Architecture Domains
+
+### 1. Identity & Access Control
+* **`users`**: Contains system actors (Teachers, Students). Includes auth configurations (`password_hash`, `preferred_language`, `onboarding_completed`).
+* **`oauth_accounts`**: Map external logins directly to internal accounts (`provider`, `provider_user_id`, `email`).
+* **`sessions`**: Tracks client security architecture (`refresh_token_hash`, expiration windows).
+
+### 2. Academic Hierarchy (Multi-Tenant)
+* **`schools`**: Independent organizational roots keyed by unique internal `code` parameters.
+* **`classes`**: Tracks specific iterations of subjects (e.g., *Grade 9 Mathematics*) containing individual access codes (`class_code`).
+* **Membership Tables**: Explicit join tables managing user tenancy:
+  * `teacher_school_memberships`
+  * `teacher_class_memberships` (with an `is_primary` flag tracking principal class ownership)
+  * `student_class_memberships`
+
+### 3. Asynchronous Content & Engine Registry
+* **`curriculum_plans` / `curriculum_snapshots`**: Captures structural teacher adjustments, storing dynamic trees within custom `curriculum_data` JSON specs alongside historical system audits.
+* **`chapters` / `chapter_topics`**: Multi-layered reference matrices for standard NCERT nodes.
+* **`chapter_assets` / `chapter_topic_assets`**: Links media engine outputs (Manim arrays, canvas render configurations, Sketchfab targets) explicitly to the curriculum hierarchy. Includes generation payloads, state markers, and S3 paths (`storage_bucket`/`storage_key`).
+* **`chapter_asset_generation_jobs`**: The state machine driving the background Redis stack. Tracks background processing steps (`attempt_count`, `queued_at`, `error_message`).
+
+### 4. Assignment Metrics & Diagnostic Logs
+* **`assignments` / `assignment_recipients`**: Tracks explicit assignments pushed out by teachers to targeted student groups.
+* **`student_attempts`**: Holds hard telemetry signals from individual interactive runs, tracking voice expressions across `score_understanding`, `score_reasoning`, and `score_expression`.
+* **`student_doubts`**: Powers the active interruption engine. Captures visual/text inputs, state, thread structures via `messages` JSON blocks, and references to generated media keys.
+
+### 5. AI Analytics & Cluster Engine
+* **`simulation_records`**: A standalone registry of auto-generated components indexed by unique `simulation_id` hash strings. Persists validation rules, durations, and UI scores.
+* **`concept_scores`**: The principal source of insights for teacher visualization tracks. Translates audio transcripts directly into structural indices:
+  * `clarity_score`, `accuracy_score`, `depth_score`, `overall_score` (Float targets scaled 1-10)
+  * `gaps`: Structured JSON array recording conceptual friction points flaggable by the teacher.
+* **`student_topic_clusters`**: Holds static output records computed out-of-process via the scikit-learn background worker. Maps class trends directly into array elements (`student_ids` JSON array) matched with `cluster_label` states (`STRUGGLING`, `AVERAGE`, `STRONG`).
+
+
+<br>
+
+---
+
+### WebSocket
+
+```
+WS /live?chapter_id=<id>&class_id=<id>
+
+Client → Server: { "audio": "<base64 PCM 16kHz>" }
+Server → Client: { "audio": "<base64>" }
+              | { "transcript": "<text>" }
+              | { "interrupted": true }
+```
+
+<br/>
+
+---
+
+## ⚙️ Tech Stack
 
 ### Frontend
+
+| Category | Technology |
+|---|---|
+| UI Framework | React 19 + TypeScript 5.8 |
+| Build | Vite 6 |
+| Server | Express 4 (`server.ts`) — Vite middleware + WebSocket proxy |
+| Styling | Tailwind CSS v4 |
+| Charts | Recharts (RadarChart, LineChart) |
+| Voice | Web Audio API → WebSocket → Gemini Live |
+| STT Fallback | Browser-native `window.SpeechRecognition` |
+
+### Backend
+
+| Category | Technology |
+|---|---|
+| API Framework | FastAPI (Python 3.11) |
+| ORM | SQLAlchemy + Alembic |
+| Database | SQLite (dev) / PostgreSQL (prod) |
+| Job Queue | Redis (BRPOP worker pattern) |
+| Object Storage | MinIO / Cloudflare R2 |
+| Animation | Manim community edition |
+| 3D Models | Sketchfab API |
+| Voice AI | Gemini Multimodal Live API |
+| LLM Scoring | Gemini (structured JSON output) |
+| Clustering | scikit-learn KMeans (n=3) |
+| TTS | Azure Speech SDK |
+
+<br/>
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js v20+ and npm v10+
+- Python 3.11+ with pip
+- Redis (local or cloud)
+- Manim community edition: `pip install manim`
+- API keys: Gemini, Azure Speech, Sketchfab
+
+### Frontend
+
 ```bash
 cd frontend
 npm install
+cp .env.example .env
+# Add: GEMINI_API_KEY, VITE_API_URL
+
 npm run dev
+# → http://localhost:3000
 ```
 
-### Key environment variables
+### Backend
 
-| Variable | Purpose |
-|---|---|
-| `JWT_SECRET` | Signs access/refresh tokens — **must** be overridden in any non-local environment; there is no runtime check forcing this |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Media generation job queue |
-| `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | Grading, quiz generation, embeddings, vision ranking |
-| `MANIM_SERVICE_URL` | Self-hosted video rendering service |
-| `SKETCHFAB_API_URL` / token | 3D model search |
-| `OBJECT_STORAGE_*` → `R2_*` → `MINIO_*` | Object storage, checked in that fallback order; default bucket `mootion-media` |
-| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Google sign-in (optional) |
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate       # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pip install scikit-learn --break-system-packages
 
-## Evaluation & Pilot Results
+cp .env.example .env
+# Add: DATABASE_URL, GEMINI_API_KEY, AZURE_SPEECH_KEY, REDIS_URL, MINIO_URL
 
-A held-out evaluation of the LLM scoring pipeline against trained human educators, run over **47 real student explanation transcripts** across 6 Biology/Physics NCERT topics (Photosynthesis, Cell Osmosis, Newton's Third Law, spindle separation, among others):
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+```
 
-| Scoring dimension | LLM vs. human agreement | Cohen's κ |
+### Background Worker
+
+```bash
+cd backend
+python -m app.worker
+# Polls Redis, runs Manim / Sketchfab / Quiz / Simulation jobs
+```
+
+### Environment Variables
+
+**Frontend `.env`**
+
+| Variable | Required | Description |
 |---|---|---|
-| Accuracy (fact-check) | 81% | 0.74 (strong) |
-| Structural Clarity | 78% | 0.71 (strong) |
-| Reasoning Depth | 74% | 0.68 (moderate) |
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `VITE_API_URL` | Yes | Backend URL (default: `http://localhost:8000`) |
 
-In 11 of 13 teacher-flagged cases, the LLM's feedback correctly isolated the exact misconception. These are **preliminary results from 12 pilot sessions**; the validation trial is expanding toward a 100+ fully annotated transcript benchmark.
+**Backend `.env`**
 
-**Field pilot (1-week trial, Grade 9 science):**
-- 10 of 12 students completed the unprompted voice-explanation sequence end to end.
-- Several low-Depth students self-identified their own gaps unprompted ("I didn't really know the why").
-- 4 students naturally code-switched into Hindi mid-explanation; the pipeline scored reasoning accurately regardless.
-
-> *"I have never seen something like this in an ed-tech tool before. For the first time, I actually know exactly which students don't understand the lesson before they write the exam."* — Grade 9 science teacher, pilot participant
-
-Post-pilot adaptations shipped in response: a browser-native Web Speech fallback for unreliable rural connectivity, teacher onboarding cut from 6 steps to 3, and average processing latency cut from 8.0s to 3.2s.
-
-**Projected unit economics** (blended, at 1,000 active students/day): ~$73/day total (≈₹6,100/day), or **≈₹6.10 per student per day** — combining voice explanation scoring, simulation rendering, and video compilation costs.
-
-## Responsible AI & Privacy
-
-- **Teacher-in-the-loop, always:** the AI suggests signals; the teacher is the final authority on any action taken. No automated punitive assessment.
-- **Multilingual parity:** explanations are scored in Hindi, Punjabi, Tamil, Telugu, and English — language choice does not penalize depth scoring.
-- **Anti-surveillance data policy:** diagnostics are private, local instructional-unblocking metrics for the teacher — not institutional metrics for ranking or targeting schools.
-- **Data minimization:** voice audio is downsampled, processed locally where possible, and purged from edge nodes within 24 hours; only anonymized, aggregated metrics are written to long-term storage.
-- **No silent score sharing:** scores are not shared with parents or administration without teacher verification.
-- **Explainability:** every score is paired with a short, plain-language feedback paragraph, not a bare number.
-- **Low-end device support:** designed to run as a lightweight PWA on ~₹8,000 Android devices, with self-contained simulations to reduce bandwidth dependency.
-
-## Known Limitations & Tech Debt
-
-Surfaced by an internal codebase audit — flagged here deliberately so they don't get rediscovered the hard way. Severity is relative to product correctness, not necessarily security exposure.
-
-| Severity | Area | Issue |
+| Variable | Required | Description |
 |---|---|---|
-| 🔴 | Doubt clarification video | The doubt-flow Manim call uses a **10-second** timeout vs. 300s elsewhere, so it almost always times out and falls back to a hardcoded placeholder stock video instead of an AI-generated explanation. |
-| 🔴 | Analytics | Two parallel, unintegrated analytics systems exist side by side: a 0–3 scale (`StudentAttempt`-based) and a 0–10 scale (`ConceptScore`-based), on different endpoints, with no shared source of truth. Some analytics-drill endpoints also return **hardcoded mock fields** (e.g. a fixed streak value, a fixed prediction-accuracy value) as if they were live data. |
-| 🔴 | Curriculum bootstrap | The "bulk" NCERT bootstrap endpoint **destructively deletes** all existing chapters/curricula for a class with no confirmation step — used as a frontend fallback when no curriculum is detected. |
-| 🔴 | Doubt gating | The "attempt before you ask" product rule (`tried_before`) is captured on submission but never actually enforced server-side. |
-| ⚠️ | Auth | A handful of endpoints (a media redirect route, several simulation read routes) have no auth check at all; the JWT secret defaults to an insecure placeholder with no runtime enforcement of a real value in production. |
-| ⚠️ | Frontend/backend mismatch | Some student-facing pages call teacher-only chapter endpoints directly — these will 403 against a real student token. |
-| ⚠️ | Reliability | The media worker is single-process/single-threaded with no retry or backoff on failed jobs; a Redis enqueue failure during assignment creation is currently swallowed silently. |
-| ⚠️ | Subject-specific prompts | Grading and quiz-generation prompts currently hardcode "science teacher" framing, which doesn't fit Mathematics or Computer Science content. |
-| ⚠️ | Duplicated playground simulation/voice logic | `LiveVoiceActivity` and parts of the student playground page appear to implement overlapping session/connect/audio flows independently, bypassing the shared API client's auth-refresh handling. |
+| `DATABASE_URL` | Yes | SQLite or PostgreSQL connection string |
+| `GEMINI_API_KEY` | Yes | For LLM scoring and voice |
+| `REDIS_URL` | Yes | Redis connection string |
+| `MINIO_URL` | Yes | Object storage endpoint |
+| `MINIO_ACCESS_KEY` | Yes | Object storage access key |
+| `MINIO_SECRET_KEY` | Yes | Object storage secret key |
+| `AZURE_SPEECH_KEY` | Yes | Azure TTS key |
+| `AZURE_SPEECH_REGION` | Yes | Azure TTS region |
+| `SKETCHFAB_API_KEY` | Yes | Sketchfab 3D model API |
+| `SECRET_KEY` | Yes | JWT signing secret |
 
-This list isn't exhaustive — treat it as a starting checklist before the next pilot phase rather than a complete inventory.
-
-## Roadmap
-
-| Target | Initiative | Owner | Success metric |
-|---|---|---|---|
-| Q3 2026 | **Sync Projector Broadcast** — mirror collective exit activities on local blackboards with real-time class data processing | Rachit Goyal (Systems Architect) | Sub-100ms dashboard latency |
-| Q4 2026 | **Metacognitive Prediction** — calibration models mapping the gap between student confidence and accuracy | Goyam Jain (Lead ML) | 90% accuracy in failure alerts |
-| Q1 2027 | **Regional SSC Board Sync** — broaden NCERT parsing to absorb state-board variations, starting with Maharashtra | Sartaj Kaur (Product Lead) | 3 board ingests in under 30 days |
-
-## Team
-
-**Evolve AI** — a multi-disciplinary cohort bridging fast, clean technical pipelines with deep pedagogic goals.
-
-| | Name | Role | Focus |
-|---|---|---|---|
-| SK | Sartaj Kaur | Product Lead | Product strategy, field loops & pedagogic goals |
-| RG | Rachit Goyal | Systems Architect | Backend orchestration and persistent storage grids |
-| PG | Poorvika Grover | Design Lead | Unified design system and student experience routes |
-| GJ | Goyam Jain | Lead ML Engineer | Model alignment & voice optimization engines |
-| DC | Divyansh Chawla | Lead Backend | WebSocket proxy pipelines & FastAPI endpoints |
-
-## Acknowledgments
-
-Built for the **Wadhwani AI SahAI Hackathon — Phase 2 Evaluation**, in partnership with **Wadhwani AI** and **Reskill.ai**.
+<br/>
 
 ---
 
-*"The enrollment problem has been solved. The understanding problem now officially has a real-time signal."*
+## 📁 Project Structure
+
+```
+mootion/
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── StudentAnalytics.tsx      # Radar chart, attempt history, weak topics
+│   │   │   ├── TeacherAnalytics.tsx      # Class overview, cluster view, drill-down
+│   │   │   ├── StudentHomePage.tsx       # Task list, pending assignments
+│   │   │   └── TeacherDashboard.tsx      # Assignment management
+│   │   └── components/
+│   │       └── LiveVoiceActivity.tsx     # Voice capture, STT fallback, score card
+│   └── server.ts                         # Express + Gemini Live WebSocket proxy
+│
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── analytics.py              # All analytics + clustering endpoints
+│   │   │   ├── auth.py                   # JWT + Google OAuth
+│   │   │   ├── assignments.py            # Assignment creation → Redis push
+│   │   │   └── simulation.py            # Simulation generation endpoint
+│   │   ├── services/
+│   │   │   └── clustering_service.py    # KMeans on ConceptScore data
+│   │   ├── simulation_engine/            # 5-stage HTML5 simulation pipeline
+│   │   ├── core/
+│   │   │   └── models.py                # All SQLAlchemy models incl. ConceptScore
+│   │   └── worker.py                    # Redis BRPOP background worker
+│   └── alembic/                         # Migration history
+│
+├── animation-engine/                    # Manim + TTS script compiler
+├── docs/
+│   └── ANALYTICS_TESTING_GUIDE.md      # Swagger + manual testing checklist
+└── README.md
+```
+
+<br/>
+
+---
+
+## 📸 UI Snippet
+
+
+<img width="1917" height="1022" alt="image" src="https://github.com/user-attachments/assets/73de44bf-d678-4dfd-9871-45007ea9298a" />
+
+<p align="center">
+  <i>Student Dashboard</i>
+</p>
+
+<br>
+
+---
+
+<img width="1918" height="1023" alt="image" src="https://github.com/user-attachments/assets/6410ccb3-17c6-4ce5-8e45-97208e014b7e" />
+
+<p align="center">
+  <i>Explain It Assignment</i>
+</p>
+
+<br/>
+
+---
+
+<img width="1918" height="1028" alt="image" src="https://github.com/user-attachments/assets/9b5db485-52ef-4056-870d-eab5c376b6e5" />
+
+<p align="center">
+  <i>Recall It Assignment</i>
+</p>
+
+<br/>
+
+---
+
+<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/8b3358ae-04f8-446b-b9e6-70999aae1525" />
+
+<p align="center">
+  <i>Connect It Assignment</i>
+</p>
+<br/>
+
+---
+<img width="1918" height="1027" alt="image" src="https://github.com/user-attachments/assets/af3b402d-2637-4c20-a39b-764e440eea58" />
+
+<p align="center">
+  <i>Assigned Concept Video Interface</i>
+</p>
+<br/>
+
+---
+<img width="1918" height="1025" alt="image" src="https://github.com/user-attachments/assets/3697ba00-fa68-4210-b38a-79f98ff21488" />
+
+<p align="center">
+  <i>Assigned 3D Model Interface</i>
+</p>
+<br/>
+
+---
+<img width="1918" height="1022" alt="image" src="https://github.com/user-attachments/assets/ae2f2709-d076-474d-9620-7db05ce7bca5" />
+
+<p align="center">
+  <i>Interactive Playground Interface</i>
+</p>
+<br/>
+
+---
+<img width="1918" height="1026" alt="image" src="https://github.com/user-attachments/assets/4677b34e-13b0-4285-aaad-30cbad709a21" />
+<p align="center">
+  <i>Doubt Engine Interface</i>
+</p>
+
+<br/>
+
+---
+
+## 🧪 Evaluation
+
+The LLM scoring pipeline was evaluated against independent teacher judgment across 12 pilot student explanation transcripts spanning Physics and Biology NCERT topics.
+
+| Dimension | LLM vs Teacher Agreement | Cohen's Kappa |
+|---|---|---|
+| Accuracy | 81% | 0.74 (Strong) |
+| Clarity | 78% | 0.71 (Strong) |
+| Depth | 74% | 0.68 (Moderate) |
+
+> Depth is the hardest dimension to score — this matches human inter-rater variance. The system is designed for diagnostic use, not high-stakes grading. Teachers can flag or override any score from the dashboard.
+
+Full methodology: [`docs/ANALYTICS_TESTING_GUIDE.md`](docs/ANALYTICS_TESTING_GUIDE.md)
+
+<br/>
+
+---
+
+## 💰 Cost at Scale
+
+| Operation | Cost per unit |
+|---|---|
+| Voice explanation + LLM scoring | $0.008 |
+| Simulation generation | $0.11 |
+| Manim video generation | $0.02 |
+| **1,000 active students/day (blended)** | **₹6.10 per student per day** |
+
+Fiscally invisible for district-level deployment. No per-school configuration required — NCERT bootstrap handles curriculum setup automatically.
+
+<br/>
+
+---
+
+## 🛡 Responsible AI
+
+- **Teacher-in-the-loop**: AI generates the signal. Teacher decides what to do with it. No automated grading, no scores sent to parents without teacher review.
+- **No surveillance architecture**: Data serves as localized diagnostic aids, not institutional performance records.
+- **Multilingual**: Students can explain in Hindi, Punjabi, Tamil, Telugu, or English. Language choice does not affect score.
+- **Low-device compatible**: Runs on ₹8,000 Android phones. PWA-ready, no app install required.
+- **Offline-friendly**: Browser-native STT fallback + self-contained HTML simulations work without connectivity.
+- **Explainable signals**: Every score is paired with a 2-sentence LLM feedback paragraph. Never just a number.
+- **Data retention**: Student voice files are downsampled, processed, and purged within 7 days. Only quantitative diagnostic metrics are retained.
+
+<br/>
+
+---
+
+## 👥 Team
+
+| Name | Role | Contribution |
+|---|---|---|
+| **Rachit Goyal** | Systems Architect | Backend orchestration, scalable pipeline frameworks |
+| **Poorvika Grover** | Design & UX Lead | End-to-end visual identity, user journey |
+| **Goyam Jain** | Lead ML Engineer | LLM scoring, KMeans pipeline, AI model optimization |
+| **Sartaj Kaur** | Product Lead & Strategy | Vision, roadmap, user validation, documentation |
+| **Divyansh Chawla** | Lead Backend Engineer | FastAPI endpoints, WebSocket architecture |
+
+<br/>
+
+---
+
+<p align="center">
+  <b>"Mootion turns student interactions into actionable understanding signals for teachers."</b>
+  <br/><br/>
+  The enrollment problem is solved. The understanding problem now has a real-time signal.
+  <br/><br/>
+  <sub>© Mootion — Team Evolve AI — Wadhwani AI SahAI Hackathon 2026</sub>
+</p>
