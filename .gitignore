@@ -17,3 +17,4 @@ chroma.sqlite3
 .env.*
 *.env
 *.env*
+backend/chroma_db/
