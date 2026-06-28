@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -53,10 +53,11 @@ def generate_asset(
     chapter_id: str,
     asset_id: str,
     request: ChapterAssetGenerateRequest,
+    background_tasks: BackgroundTasks,
     user=Depends(require_teacher),
     db: Session = Depends(get_db),
 ): 
-    return generate_chapter_asset(db, user, class_id, chapter_id, asset_id, request)
+    return generate_chapter_asset(db, user, class_id, chapter_id, asset_id, request, background_tasks)
 
 
 @router.post("/{chapter_id}/topics/{topic_id}/assets/{asset_id}/generate", response_model=ChapterTopicAssetGenerateResponse)
@@ -66,10 +67,11 @@ def generate_topic_asset_route(
     topic_id: str,
     asset_id: str,
     request: ChapterTopicAssetGenerateRequest,
+    background_tasks: BackgroundTasks,
     user=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    return generate_topic_asset(db, user, class_id, chapter_id, topic_id, asset_id, request)
+    return generate_topic_asset(db, user, class_id, chapter_id, topic_id, asset_id, request, background_tasks)
 
 
 @router.patch("/{chapter_id}/topics/{topic_id}/assets/{asset_id}", response_model=ChapterTopicAssetResponse)

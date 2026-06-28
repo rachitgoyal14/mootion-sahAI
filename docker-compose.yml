@@ -25,6 +25,7 @@ services:
       - MANIM_SERVICE_BASE_URL=http://animation-engine:8001
     volumes:
       - ./backend/sims.json:/app/sim/sims.json
+      - ./backend/chroma_db:/app/chroma_db
     depends_on:
       - db
       - redis
@@ -42,6 +43,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - MANIM_SERVICE_URL=http://animation-engine:8001/explain
       - MANIM_SERVICE_BASE_URL=http://animation-engine:8001
+    volumes:
+      - ./backend/chroma_db:/app/chroma_db
     depends_on:
       - backend
       - redis

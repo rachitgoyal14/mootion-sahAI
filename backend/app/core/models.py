@@ -528,6 +528,7 @@ class ConceptScore(Base):
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     chapter_id = Column(UUID(as_uuid=True), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
     class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_attempt_id = Column(UUID(as_uuid=True), ForeignKey("student_attempts.id", ondelete="SET NULL"), nullable=True, index=True)
     transcript = Column(Text, nullable=True)
     clarity_score = Column(Float, nullable=True)
     accuracy_score = Column(Float, nullable=True)

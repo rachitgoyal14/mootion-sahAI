@@ -13,7 +13,8 @@ import {
   RefreshCw,
   AlertTriangle,
   Award,
-  Users
+  Users,
+  Check
 } from 'lucide-react';
 import { NavItem } from '../components/NavItem';
 import { ChatbotFab } from '../components/ChatbotFab';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LogoutModal } from '../components/LogoutModal';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -332,9 +332,14 @@ export function TeacherChapterSetupPage() {
     }
   };
 
+  const pollIntervalsRef = useRef<Record<string, any>>({});
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      Object.values(pollIntervalsRef.current).forEach(clearInterval);
+    };
   }, []);
 
   const clearGenerationState = (assetId: string) => {
@@ -426,24 +431,60 @@ export function TeacherChapterSetupPage() {
 
       const generatedAsset = response.asset || response;
 
-      setActivities(prev => prev.map(act => {
-        if (act.id !== activity.id) return act;
+      if (generatedAsset.generation_status === 'processing' || generatedAsset.generation_status === 'queued') {
+        const intervalId = setInterval(async () => {
+          try {
+            const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
+            const asset = data?.assets?.find((a: any) => a.asset_id === activity.id);
+            
+            if (asset) {
+              if (asset.generation_status === 'ready' || asset.generation_status === 'failed') {
+                clearInterval(intervalId);
+                delete pollIntervalsRef.current[activity.id];
+                
+                setActivities(prev => prev.map(act => {
+                  if (act.id !== activity.id) return act;
+                  return {
+                    ...act,
+                    title: asset.title || act.title,
+                    desc: asset.description || act.desc,
+                    previewText: asset.payload_json?.instructions || asset.payload_json?.previewText || `Outline for ${asset.title || act.title}.`,
+                    lastPrompt: prompt || act.lastPrompt,
+                    generation_status: asset.generation_status || 'ready',
+                    external_url: asset.external_url || null,
+                    payload_json: asset.payload_json || {},
+                    showRegenPrompt: false,
+                  };
+                }));
+                
+                clearGenerationState(activity.id);
+              }
+            }
+          } catch (pollErr) {
+            console.error('Error polling asset status:', pollErr);
+          }
+        }, 5000);
+        pollIntervalsRef.current[activity.id] = intervalId;
+      } else {
+        setActivities(prev => prev.map(act => {
+          if (act.id !== activity.id) return act;
 
-        return {
-          ...act,
-          title: generatedAsset.title || act.title,
-          desc: generatedAsset.description || act.desc,
-          previewText: generatedAsset.payload_json?.instructions || generatedAsset.payload_json?.previewText || `Outline for ${generatedAsset.title || act.title}.`,
-          lastPrompt: prompt || act.lastPrompt,
-          generation_status: generatedAsset.generation_status || 'ready',
-          external_url: generatedAsset.external_url || null,
-          payload_json: generatedAsset.payload_json || {},
-          showRegenPrompt: false,
-        };
-      }));
+          return {
+            ...act,
+            title: generatedAsset.title || act.title,
+            desc: generatedAsset.description || act.desc,
+            previewText: generatedAsset.payload_json?.instructions || generatedAsset.payload_json?.previewText || `Outline for ${generatedAsset.title || act.title}.`,
+            lastPrompt: prompt || act.lastPrompt,
+            generation_status: generatedAsset.generation_status || 'ready',
+            external_url: generatedAsset.external_url || null,
+            payload_json: generatedAsset.payload_json || {},
+            showRegenPrompt: false,
+          };
+        }));
 
-      setRegenText(prev => ({ ...prev, [activity.id]: '' }));
-      clearGenerationState(activity.id);
+        setRegenText(prev => ({ ...prev, [activity.id]: '' }));
+        clearGenerationState(activity.id);
+      }
     } catch (err: any) {
       const detail = err?.detail || err?.message || 'Generation failed.';
       console.error('Failed to generate chapter asset:', err);

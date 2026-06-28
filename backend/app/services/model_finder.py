@@ -314,39 +314,88 @@ def agent_model_rank(query: str, models: list[dict]) -> tuple[dict, int] | None:
     return best_model, best_score
 
 
+def _refine_query_for_3d(query: str) -> str | None:
+    prompt = f"""
+You are an assistant that simplifies STEM educational topics into concrete 3D search keywords for Sketchfab.
+We need to find a 3D model that represents or helps explain the concept: "{query}".
+Sketchfab contains concrete physical objects, systems, or scientific models. It does not index abstract topics well.
+
+Generate a simple, 1-3 word search query representing a physical object, device, structure, or system that best visualizes this concept.
+Examples:
+- "Kinetic theory of gases - assumptions" -> "gas molecules"
+- "Kinetic Theory" -> "gas molecules"
+- "Units and Measurements" -> "vernier caliper"
+- "Structure of Atom" -> "atom"
+- "Friction" -> "friction block"
+- "Laws of Motion" -> "newton's cradle"
+- "Chemical Bonding" -> "water molecule"
+- "Reflection of Light" -> "prism"
+
+Output ONLY the raw 1-3 words search query. No punctuation, no quotes, no markdown, no extra text.
+""".strip()
+    try:
+        res = query_llm(prompt)
+        refined = res.get("response", "").strip().strip('"').strip("'")
+        if refined and refined.lower() != query.lower():
+            return refined
+    except Exception:
+        pass
+    return None
+
+
 def find_model(query: str) -> dict[str, object]:
     if not settings.sketchfab_api_url:
         return {"error": "Sketchfab API URL is not configured"}
 
+    def search_and_rank(search_query: str):
+        try:
+            response = httpx.get(
+                settings.sketchfab_api_url,
+                params={"q": search_query, "sort_by": "-relevance", "type": "models"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("results", [])
+            if not results:
+                return None
+            ranked = agent_model_rank(query=search_query, models=results[:5])
+            return ranked
+        except Exception:
+            return None
+
     try:
-        response = httpx.get(
-            settings.sketchfab_api_url,
-            params={"q": query, "sort_by": "-relevance", "type": "models"},
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        data = response.json()
-        results = data.get("results", [])
+        # Step 1: Search for original query
+        best_candidate = None
+        best_score = -1
 
-        if not results:
-            return {"message": "No models found."}
+        orig_ranked = search_and_rank(query)
+        if orig_ranked:
+            best_candidate, best_score = orig_ranked
 
-        ranked = agent_model_rank(query=query, models=results[:5])
-        if not ranked:
-            return {"message": "No suitable model found."}
-
-        best_model, best_score = ranked
+        # Step 2: If no candidate or score is below 80, try to refine query and search
         if best_score < 80:
+            refined_query = _refine_query_for_3d(query)
+            if refined_query:
+                refined_ranked = search_and_rank(refined_query)
+                if refined_ranked:
+                    ref_model, ref_score = refined_ranked
+                    if ref_score > best_score:
+                        best_candidate = ref_model
+                        best_score = ref_score
+
+        # Step 3: Check final best score against a softer threshold of 50
+        if not best_candidate or best_score < 50:
             return {
                 "message": "No suitable model found.",
-                "error": f"No relevant model found (max score {best_score} is below threshold 80)."
+                "error": f"No relevant model found (max score {best_score} is below threshold 50)."
             }
 
         return {
-            "name": best_model.get("name"),
-            "uid": best_model.get("uid"),
-            "embedUrl": best_model.get("embedUrl"),
-            "viewerUrl": best_model.get("viewerUrl"),
+            "name": best_candidate.get("name"),
+            "uid": best_candidate.get("uid"),
+            "embedUrl": best_candidate.get("embedUrl"),
+            "viewerUrl": best_candidate.get("viewerUrl"),
             "score": best_score,
         }
     except Exception as exc:

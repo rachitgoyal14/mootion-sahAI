@@ -761,6 +761,7 @@ def submit_quiz_attempt(
             student_id=student.id,
             chapter_id=assignment.chapter_id,
             class_id=assignment.class_id,
+            student_attempt_id=attempt.id,
             transcript=feedback,
             clarity_score=clarity_score,
             accuracy_score=accuracy_score,
@@ -1172,7 +1173,7 @@ def get_student_activity_calendar(db: Session, user: User, year: int, month: int
 
 
 def get_student_my_analytics(db: Session, student_id: str):
-    from app.core.models import StudentAttempt, ConceptScore, Assignment, Topic, Chapter
+    from app.core.models import StudentAttempt, ConceptScore, Assignment, ChapterTopic, Chapter
     import collections
     from uuid import UUID
 
@@ -1187,40 +1188,46 @@ def get_student_my_analytics(db: Session, student_id: str):
     total_activities = 0
     recent_topic_name = None
 
+    # Setup explicitly supported activity types mapping
+    ACTIVITY_MAPPING = {
+        "explain_ai": "Explain It",
+        "simulation": "Predict It",
+        "interactive_quiz": "Recall It"
+    }
+
+    import logging
+    logger = logging.getLogger(__name__)
+
     for s in scores:
+        # Skip if there's no FK link (old data before the migration)
+        if not s.student_attempt_id:
+            continue
+            
+        attempt = db.query(StudentAttempt).filter(StudentAttempt.id == s.student_attempt_id).first()
+        if not attempt:
+            continue
+            
+        assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
+        if not assignment:
+            continue
+            
+        t = assignment.assignment_type.lower()
+        if t not in ACTIVITY_MAPPING:
+            logger.warning(f"Excluding ConceptScore {s.id} from analytics because assignment_type '{t}' is not tracked.")
+            continue
+            
+        activity_type = ACTIVITY_MAPPING[t]
         total_activities += 1
         
-        # Determine activity type and topic/chapter
-        activity_type = "Completed Activity"
         topic_title = "Unknown Topic"
         chapter_title = "Unknown Chapter"
         
-        attempt = None
-        if s.transcript:
-            attempt = db.query(StudentAttempt).filter(
-                StudentAttempt.student_id == UUID(student_id),
-                StudentAttempt.transcription_text == s.transcript
-            ).first()
-            
-        if attempt:
-            assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
-            if assignment:
-                t = assignment.assignment_type.lower()
-                if t in ("explain_it", "explain_ai"):
-                    activity_type = "Explain It"
-                elif t in ("predict_it", "predict_ai"):
-                    activity_type = "Predict It"
-                elif t in ("interactive_quiz", "quiz", "recall_it"):
-                    activity_type = "Recall It"
-                else:
-                    activity_type = assignment.assignment_type
-                    
-                topic = db.query(Topic).filter(Topic.id == assignment.topic_id).first()
-                if topic:
-                    topic_title = topic.title
-                    if recent_topic_name is None:
-                        recent_topic_name = topic.title
-                        
+        topic = db.query(ChapterTopic).filter(ChapterTopic.id == assignment.topic_id).first()
+        if topic:
+            topic_title = topic.title
+            if recent_topic_name is None:
+                recent_topic_name = topic.title
+                
         chapter = db.query(Chapter).filter(Chapter.id == s.chapter_id).first()
         if chapter:
             chapter_title = chapter.title

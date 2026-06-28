@@ -25,7 +25,7 @@ from app.services.chat_ai_service import _get_client, _extract_json
 from app.services.clustering_service import compute_clusters
 from app.core.config import settings
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 class ExplanationSubmitRequest(BaseModel):
@@ -33,6 +33,7 @@ class ExplanationSubmitRequest(BaseModel):
     class_id: str
     transcript: str
     gaps: list[str] | None = None
+    attempt_id: str | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -135,6 +136,7 @@ def submit_explanation(
         student_id=user.id,
         chapter_id=UUID(request.chapter_id),
         class_id=UUID(request.class_id),
+        student_attempt_id=UUID(request.attempt_id) if request.attempt_id else None,
         transcript=request.transcript,
         clarity_score=float(data.get("clarity_score", 0)),
         accuracy_score=float(data.get("accuracy_score", 0)),
@@ -390,28 +392,38 @@ def get_class_misconceptions(
     # Find the matching activity type via StudentAttempt and Assignment
     misconception_map = collections.defaultdict(lambda: {"count": 0, "activities": set(), "chapter_id": None})
 
+    # Setup explicitly supported activity types mapping
+    ACTIVITY_MAPPING = {
+        "explain_ai": "Explain It",
+        "simulation": "Predict It",
+        "interactive_quiz": "Recall It"
+    }
+
+    import logging
+    logger = logging.getLogger(__name__)
+
     for s in scores:
         if not s.gaps:
             continue
             
-        activity_type = "Unknown"
-        if s.transcript:
-            attempt = db.query(StudentAttempt).filter(
-                StudentAttempt.student_id == s.student_id,
-                StudentAttempt.transcription_text == s.transcript
-            ).first()
-            if attempt:
-                assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
-                if assignment:
-                    t = assignment.assignment_type.lower()
-                    if t == "explain_it" or t == "explain_ai":
-                        activity_type = "Explain It"
-                    elif t == "predict_it" or t == "predict_ai":
-                        activity_type = "Predict It"
-                    elif t == "interactive_quiz" or t == "quiz" or t == "recall_it":
-                        activity_type = "Recall It"
-                    else:
-                        activity_type = assignment.assignment_type
+        # Skip if there's no FK link (old data before the migration)
+        if not s.student_attempt_id:
+            continue
+            
+        attempt = db.query(StudentAttempt).filter(StudentAttempt.id == s.student_attempt_id).first()
+        if not attempt:
+            continue
+            
+        assignment = db.query(Assignment).filter(Assignment.id == attempt.assignment_id).first()
+        if not assignment:
+            continue
+            
+        t = assignment.assignment_type.lower()
+        if t not in ACTIVITY_MAPPING:
+            logger.warning(f"Excluding ConceptScore {s.id} from class misconceptions because assignment_type '{t}' is not tracked.")
+            continue
+            
+        activity_type = ACTIVITY_MAPPING[t]
         
         for gap in s.gaps:
             gap_cleaned = gap.strip()

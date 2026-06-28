@@ -384,10 +384,14 @@ export function TeacherTopicSetupPage() {
   const [generatingAssets, setGeneratingAssets] = useState<Record<string, { endsAt: number; duration: number }>>({});
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const pollIntervalsRef = useRef<Record<string, any>>({});
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      Object.values(pollIntervalsRef.current).forEach(clearInterval);
+    };
   }, []);
 
   const selectedAsset = activeAsset;
@@ -478,11 +482,46 @@ export function TeacherTopicSetupPage() {
       });
 
       setRegenText('');
-      setGeneratingAssets(prev => {
-        const next = { ...prev };
-        delete next[assetId];
-        return next;
-      });
+
+      if (generatedAsset.generation_status === 'processing' || generatedAsset.generation_status === 'queued') {
+        const intervalId = setInterval(async () => {
+          try {
+            const data = await api.get(`/teachers/classes/${classId}/chapters/${chapterId}`);
+            const topic = data?.topics?.find((t: any) => t.topic_id === activeTopic.topic_id);
+            const asset = topic?.assets?.find((a: any) => a.asset_id === assetId);
+            
+            if (asset) {
+              if (asset.generation_status === 'ready' || asset.generation_status === 'failed') {
+                clearInterval(intervalId);
+                delete pollIntervalsRef.current[assetId];
+                
+                setTopicAssets(prev => prev.map(a => a.asset_id === assetId ? asset : a));
+                setSelectedAssetId(currentId => {
+                  if (currentId === assetId) {
+                    setActiveAsset(asset);
+                  }
+                  return currentId;
+                });
+                
+                setGeneratingAssets(prev => {
+                  const next = { ...prev };
+                  delete next[assetId];
+                  return next;
+                });
+              }
+            }
+          } catch (pollErr) {
+            console.error('Error polling asset status:', pollErr);
+          }
+        }, 5000);
+        pollIntervalsRef.current[assetId] = intervalId;
+      } else {
+        setGeneratingAssets(prev => {
+          const next = { ...prev };
+          delete next[assetId];
+          return next;
+        });
+      }
     } catch (err: any) {
       console.error('Failed to generate topic asset:', err);
       setGenerationError(err?.detail || err?.message || 'Generation failed.');

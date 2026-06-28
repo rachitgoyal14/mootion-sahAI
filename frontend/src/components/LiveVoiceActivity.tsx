@@ -675,7 +675,7 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
     }
   };
 
-  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps: string[] | null) => {
+  const submitExplanationForAnalysis = async (transcriptText: string, chapterId: string | null, classId: string | null, gaps: string[] | null, attemptId: string | null = null) => {
     try {
       let finalClassId = classId;
       let finalChapterId = chapterId;
@@ -723,6 +723,9 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
       };
       if (gaps && gaps.length > 0) {
         payload.gaps = gaps;
+      }
+      if (attemptId) {
+        payload.attempt_id = attemptId;
       }
 
       const response = await api.post('/analytics/submit-explanation', payload);
@@ -804,7 +807,12 @@ Respond in 1-2 conversational sentences. Ask EXACTLY ONE question. Never refer t
           transcription_text: studentText,
           language: 'english'
         }).then(res => {
-
+          try {
+            const attemptId = (res as any).attempt_id || null;
+            submitExplanationForAnalysis(studentText, null, null, finalEvalData?.gaps || null, attemptId);
+          } catch(e) {
+            console.error("Failed to submit explanation for analytics:", e);
+          }
         }).catch(err => {
           console.error("Failed to submit interactive assignment:", err);
         });

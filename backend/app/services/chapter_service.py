@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -427,6 +427,98 @@ def _apply_direct_generation_result(db: Session, asset: ChapterAsset, result: di
     raise RuntimeError(f"Unsupported provider: {asset.provider}")
 
 
+def _bg_generate_chapter_asset(asset_id: str, payload_json: dict, chapter_title: str, prompt: str, generation_prompt: str):
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        asset = db.get(ChapterAsset, uuid.UUID(asset_id))
+        if not asset:
+            print(f"[media-worker] Chapter asset {asset_id} not found in background generation", flush=True)
+            return
+
+        if asset.asset_type == "concept_video":
+            result = _run_manim_generation(asset, payload_json)
+        elif asset.asset_type == "three_d_model":
+            result = _run_model_finder_generation(asset, payload_json)
+        elif asset.asset_type == "simulation":
+            sim_prompt = f"Teach me {chapter_title}. {prompt}".strip()
+            result = _generate_simulation_result(sim_prompt)
+        elif asset.asset_type == "quiz":
+            from app.services.assignment_service import _run_quiz_generation
+            result = _run_quiz_generation(asset, payload_json)
+        else:
+            raise RuntimeError(f"Unsupported provider: {asset.provider}")
+
+        if asset.asset_type == "three_d_model" and isinstance(result, dict):
+            if result.get("error") or result.get("message") in {"No models found.", "No suitable model found."}:
+                raise RuntimeError(str(result.get("error") or result.get("message") or "No model found."))
+
+        if asset.asset_type == "simulation":
+            if getattr(result, "error", None) or getattr(getattr(result, "phase", None), "value", None) != "completed" or not getattr(result, "html", ""):
+                raise RuntimeError(str(getattr(result, "error", None) or "Simulation generation did not complete successfully."))
+
+        if asset.asset_type == "quiz" and isinstance(result, dict) and result.get("error"):
+            raise RuntimeError(str(result.get("error")))
+
+        _apply_direct_generation_result(db, asset, result, prompt=generation_prompt)
+        db.commit()
+        print(f"[media-worker] Background chapter asset {asset_id} generation succeeded", flush=True)
+    except Exception as exc:
+        db.rollback()
+        print(f"[media-worker] Background chapter asset {asset_id} generation failed: {exc}", flush=True)
+        asset = db.get(ChapterAsset, uuid.UUID(asset_id))
+        if asset:
+            asset.generation_status = "failed"
+            asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
+            db.commit()
+    finally:
+        db.close()
+
+
+def _bg_generate_topic_asset(asset_id: str, payload_json: dict, topic_title: str, notes: str):
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        asset = db.get(ChapterTopicAsset, uuid.UUID(asset_id))
+        if not asset:
+            print(f"[media-worker] Topic asset {asset_id} not found in background generation", flush=True)
+            return
+
+        if asset.asset_type == "concept_video":
+            result = _run_manim_generation(asset, payload_json)
+        elif asset.asset_type == "three_d_model":
+            result = _run_model_finder_generation(asset, payload_json)
+        elif asset.asset_type == "simulation":
+            sim_prompt = f"Teach me {topic_title}. {notes}".strip()
+            result = _generate_simulation_result(sim_prompt)
+        elif asset.asset_type == "connect_it":
+            result = _run_connect_it_generation(asset, payload_json)
+        else:
+            raise RuntimeError(f"Unsupported asset type: {asset.asset_type}")
+
+        if asset.asset_type == "three_d_model" and isinstance(result, dict):
+            if result.get("error") or result.get("message") in {"No models found.", "No suitable model found."}:
+                raise RuntimeError(str(result.get("error") or result.get("message") or "No model found."))
+
+        if asset.asset_type == "simulation":
+            if getattr(result, "error", None) or getattr(getattr(result, "phase", None), "value", None) != "completed" or not getattr(result, "html", ""):
+                raise RuntimeError(str(getattr(result, "error", None) or "Simulation generation did not complete successfully."))
+
+        _apply_direct_generation_result(db, asset, result, prompt=topic_title)
+        db.commit()
+        print(f"[media-worker] Background topic asset {asset_id} generation succeeded", flush=True)
+    except Exception as exc:
+        db.rollback()
+        print(f"[media-worker] Background topic asset {asset_id} generation failed: {exc}", flush=True)
+        asset = db.get(ChapterTopicAsset, uuid.UUID(asset_id))
+        if asset:
+            asset.generation_status = "failed"
+            asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
+            db.commit()
+    finally:
+        db.close()
+
+
 def generate_chapter_asset(
     db: Session,
     user: User,
@@ -434,6 +526,7 @@ def generate_chapter_asset(
     chapter_id: str,
     asset_id: str,
     request: ChapterAssetGenerateRequest,
+    background_tasks: BackgroundTasks,
 ) -> ChapterAssetGenerateResponse:
     _ensure_teacher_has_access(db, user, class_id)
 
@@ -511,41 +604,14 @@ def generate_chapter_asset(
     asset.payload_json = {**asset.payload_json, "generation_prompt": generation_prompt, "teacher_notes": prompt, "generation_status": "processing"}
     db.commit()
 
-    try:
-        if asset.asset_type == "concept_video":
-            result = _run_manim_generation(asset, payload_json)
-        elif asset.asset_type == "three_d_model":
-            result = _run_model_finder_generation(asset, payload_json)
-        elif asset.asset_type == "simulation":
-            sim_prompt = f"Teach me {chapter.title}. {prompt}".strip()
-            result = _generate_simulation_result(sim_prompt)
-        elif asset.asset_type == "quiz":
-            from app.services.assignment_service import _run_quiz_generation
-
-            result = _run_quiz_generation(asset, payload_json)
-        else:
-            raise RuntimeError(f"Unsupported provider: {asset.provider}")
-
-        if asset.asset_type == "three_d_model" and isinstance(result, dict):
-            if result.get("error") or result.get("message") in {"No models found.", "No suitable model found."}:
-                raise RuntimeError(str(result.get("error") or result.get("message") or "No model found."))
-
-        if asset.asset_type == "simulation":
-            if getattr(result, "error", None) or getattr(getattr(result, "phase", None), "value", None) != "completed" or not getattr(result, "html", ""):
-                raise RuntimeError(str(getattr(result, "error", None) or "Simulation generation did not complete successfully."))
-
-        if asset.asset_type == "quiz" and isinstance(result, dict) and result.get("error"):
-            raise RuntimeError(str(result.get("error")))
-
-        _apply_direct_generation_result(db, asset, result, prompt=generation_prompt)
-        db.commit()
-        print("[media-worker] Asset update committed to DB", flush=True)
-    except Exception as exc:
-        asset.generation_status = "failed"
-        asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
-        db.commit()
-        print("[media-worker] Asset update committed to DB", flush=True)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    background_tasks.add_task(
+        _bg_generate_chapter_asset,
+        str(asset.id),
+        payload_json,
+        chapter.title,
+        prompt,
+        generation_prompt
+    )
 
     db.refresh(asset)
     return ChapterAssetGenerateResponse(
@@ -577,6 +643,7 @@ def generate_topic_asset(
     topic_id: str,
     asset_id: str,
     request: ChapterTopicAssetGenerateRequest,
+    background_tasks: BackgroundTasks,
 ) -> ChapterTopicAssetGenerateResponse:
     _ensure_teacher_has_access(db, user, class_id)
 
@@ -660,34 +727,13 @@ def generate_topic_asset(
     asset.payload_json = {**asset.payload_json, "generation_prompt": topic.title, "teacher_notes": notes, "generation_status": "processing", "placeholder": True}
     db.commit()
 
-    try:
-        if asset.asset_type == "concept_video":
-            result = _run_manim_generation(asset, payload_json)
-        elif asset.asset_type == "three_d_model":
-            result = _run_model_finder_generation(asset, payload_json)
-        elif asset.asset_type == "simulation":
-            sim_prompt = f"Teach me {topic.title}. {notes}".strip()
-            result = _generate_simulation_result(sim_prompt)
-        elif asset.asset_type == "connect_it":
-            result = _run_connect_it_generation(asset, payload_json)
-        else:
-            raise RuntimeError(f"Unsupported asset type: {asset.asset_type}")
-
-        if asset.asset_type == "three_d_model" and isinstance(result, dict):
-            if result.get("error") or result.get("message") in {"No models found.", "No suitable model found."}:
-                raise RuntimeError(str(result.get("error") or result.get("message") or "No model found."))
-
-        if asset.asset_type == "simulation":
-            if getattr(result, "error", None) or getattr(getattr(result, "phase", None), "value", None) != "completed" or not getattr(result, "html", ""):
-                raise RuntimeError(str(getattr(result, "error", None) or "Simulation generation did not complete successfully."))
-
-        _apply_direct_generation_result(db, asset, result, prompt=topic.title)
-        db.commit()
-    except Exception as exc:
-        asset.generation_status = "failed"
-        asset.payload_json = {**asset.payload_json, "generated": False, "error": str(exc)}
-        db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    background_tasks.add_task(
+        _bg_generate_topic_asset,
+        str(asset.id),
+        payload_json,
+        topic.title,
+        notes
+    )
 
     db.refresh(asset)
     return ChapterTopicAssetGenerateResponse(

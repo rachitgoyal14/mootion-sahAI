@@ -127,7 +127,23 @@ def extract_scene_video(scene_class_name: str, scene_id: str, index: int):
     SCENES_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     dst = SCENES_OUT_DIR / f"{index:02d}_{scene_id}.mp4"
-    shutil.move(candidates[0], dst)
+    import os
+    try:
+        shutil.move(candidates[0], dst)
+    except PermissionError:
+        # In Docker, copystat on mounted volumes can fail with PermissionError (operation not permitted)
+        # even though the file content was successfully copied.
+        if os.path.exists(dst):
+            try:
+                os.unlink(candidates[0])
+            except Exception:
+                pass
+        else:
+            shutil.copyfile(candidates[0], dst)
+            try:
+                os.unlink(candidates[0])
+            except Exception:
+                pass
 
     print(f"🎬 Saved → {dst}")
     return dst

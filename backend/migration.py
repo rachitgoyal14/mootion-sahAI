@@ -41,6 +41,28 @@ def migrate():
                 print("gaps column already exists in concept_scores table.")
         else:
             print("concept_scores table does not exist yet. It will be created by SQLAlchemy metadata.")
+
+        # Add student_attempt_id to concept_scores
+        if 'concept_scores' in tables:
+            columns = [col['name'] for col in inspector.get_columns('concept_scores')]
+            if 'student_attempt_id' not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE concept_scores ADD COLUMN student_attempt_id UUID REFERENCES student_attempts(id) ON DELETE SET NULL;"))
+                print("Successfully added student_attempt_id column to concept_scores table!")
+            else:
+                print("student_attempt_id column already exists in concept_scores table.")
+
+        # Add status column to assignment_recipients
+        if 'assignment_recipients' in tables:
+            columns = [col['name'] for col in inspector.get_columns('assignment_recipients')]
+            if 'status' not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE assignment_recipients ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending';"))
+                print("Successfully added status column (VARCHAR(20)) to assignment_recipients table!")
+            else:
+                print("status column already exists in assignment_recipients table.")
+        else:
+            print("assignment_recipients table does not exist yet.")
     except Exception as e:
         print("Error executing migration SQL:", e)
 
